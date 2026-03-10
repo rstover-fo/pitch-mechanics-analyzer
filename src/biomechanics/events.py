@@ -156,6 +156,40 @@ def detect_ball_release(
     return int(np.argmax(search) + offset)
 
 
+def approximate_shoulder_er_2d(
+    shoulder: np.ndarray,
+    elbow: np.ndarray,
+    wrist: np.ndarray,
+    hip_center: np.ndarray,
+) -> float:
+    """Approximate shoulder external rotation from 2D side-view keypoints.
+
+    Measures the angle of the forearm (elbow->wrist vector) relative to the
+    trunk line (hip_center->shoulder vector). From a side view, high ER
+    (layback) appears as the forearm angled behind and above the shoulder.
+
+    Args:
+        shoulder: Throwing shoulder (x, y), shape (2,).
+        elbow: Throwing elbow (x, y), shape (2,).
+        wrist: Throwing wrist (x, y), shape (2,).
+        hip_center: Midpoint of hips (x, y), shape (2,).
+
+    Returns:
+        Approximate ER angle in degrees (0-180).
+    """
+    forearm = wrist - elbow
+    trunk = shoulder - hip_center
+
+    dot = np.dot(forearm, trunk)
+    mag_forearm = np.linalg.norm(forearm)
+    mag_trunk = np.linalg.norm(trunk)
+
+    cos_angle = dot / (mag_forearm * mag_trunk + 1e-8)
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)
+
+    return float(np.degrees(np.arccos(cos_angle)))
+
+
 def detect_events(
     keypoints_df: pd.DataFrame,
     fps: float = 30.0,

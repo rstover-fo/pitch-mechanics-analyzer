@@ -16,7 +16,11 @@ from src.biomechanics.benchmarks import (
     BenchmarkResult,
 )
 from src.biomechanics.features import angle_between_points, compute_trunk_tilt
-from src.biomechanics.events import detect_leg_lift, DeliveryEvents
+from src.biomechanics.events import (
+    detect_leg_lift,
+    DeliveryEvents,
+    approximate_shoulder_er_2d,
+)
 
 
 class TestOBPBenchmarks:
@@ -116,6 +120,37 @@ class TestEventDetection:
         durations = events.phase_durations()
         assert durations["windup_to_foot_plant"] == pytest.approx(0.5, abs=0.01)
         assert durations["arm_acceleration"] == pytest.approx(5 / 30, abs=0.01)
+
+
+class TestApproximateShoulderER:
+    """Tests for 2D shoulder external rotation approximation."""
+
+    def test_arm_behind_head_high_er(self):
+        """When wrist is behind and above shoulder (layback position), ER should be > 90°.
+
+        In screen coordinates (y-down), layback means forearm points downward
+        (toward the back/ground) while trunk points upward, so the forearm
+        vector opposes the trunk vector -> angle > 90°.
+        """
+        # Pitcher viewed from side, screen coords (y increases downward)
+        hip_center = np.array([300.0, 400.0])
+        shoulder = np.array([300.0, 200.0])   # Directly above hips
+        elbow = np.array([350.0, 180.0])      # Arm abducted to the side
+        wrist = np.array([370.0, 300.0])       # Forearm dropped behind (layback)
+
+        er = approximate_shoulder_er_2d(shoulder, elbow, wrist, hip_center)
+        assert er > 90.0, f"Expected ER > 90° for layback position, got {er:.1f}°"
+
+    def test_arm_forward_low_er(self):
+        """When arm is forward and up (reaching/cocking), ER should be < 90°."""
+        # Forearm points roughly in the same direction as the trunk (upward)
+        hip_center = np.array([300.0, 400.0])
+        shoulder = np.array([300.0, 200.0])   # Directly above hips
+        elbow = np.array([340.0, 170.0])      # Elbow slightly forward and up
+        wrist = np.array([350.0, 100.0])       # Wrist above elbow, forearm ~parallel to trunk
+
+        er = approximate_shoulder_er_2d(shoulder, elbow, wrist, hip_center)
+        assert er < 90.0, f"Expected ER < 90° for forward arm, got {er:.1f}°"
 
 
 if __name__ == "__main__":
