@@ -14,6 +14,7 @@ Usage:
 import argparse
 import base64
 import json
+import os
 import sys
 import webbrowser
 from pathlib import Path
@@ -35,13 +36,22 @@ from src.biomechanics.events import (
 )
 from src.biomechanics.features import angle_between_points, extract_metrics
 from src.biomechanics.benchmarks import METRIC_DISPLAY_NAMES, OBPBenchmarks
+from src.biomechanics.youth_normalizer import YouthPitcherProfile, YouthNormalizer
 from src.biomechanics.validation import validate_pipeline_output
+from src.coaching.insights import (
+    generate_coaching_report,
+    generate_youth_coaching_report,
+    generate_report_offline,
+    generate_youth_report_offline,
+    load_prompt,
+)
 from src.viz.skeleton import draw_angle_arc, draw_skeleton
 from src.viz.trajectories import (
     plot_confidence_heatmap,
     plot_joint_trajectory,
     plot_wrist_speed,
 )
+from src.viz.plots import plot_pitcher_comparison, plot_percentile_gauges
 from src.viz.report import build_report_html
 
 
@@ -96,7 +106,47 @@ def main() -> None:
         "--no-open", action="store_true",
         help="Don't auto-open the report in a browser",
     )
+    parser.add_argument(
+        "--age", type=int, default=None,
+        help="Pitcher age in years (requires --height and --weight)",
+    )
+    parser.add_argument(
+        "--height", type=float, default=None,
+        help="Pitcher height in inches (requires --age and --weight)",
+    )
+    parser.add_argument(
+        "--weight", type=float, default=None,
+        help="Pitcher weight in pounds (requires --age and --height)",
+    )
     args = parser.parse_args()
+
+    # Validate youth profile flags: all-or-nothing
+    youth_flags = [args.age, args.height, args.weight]
+    provided_count = sum(1 for v in youth_flags if v is not None)
+    if 0 < provided_count < 3:
+        print("Error: --age, --height, and --weight must all be provided together.")
+        sys.exit(1)
+
+    youth_profile = None
+    if provided_count == 3:
+        if not (6 <= args.age <= 25):
+            print(f"Error: --age must be between 6 and 25 (got {args.age})")
+            sys.exit(1)
+        if not (36 <= args.height <= 84):
+            print(f"Error: --height must be between 36 and 84 inches (got {args.height})")
+            sys.exit(1)
+        if not (40 <= args.weight <= 350):
+            print(f"Error: --weight must be between 40 and 350 lbs (got {args.weight})")
+            sys.exit(1)
+        height_cm = args.height * 2.54
+        weight_kg = args.weight * 0.4536
+        youth_profile = {
+            "age": args.age,
+            "height_in": args.height,
+            "weight_lbs": args.weight,
+            "height_cm": height_cm,
+            "weight_kg": weight_kg,
+        }
 
     # Parse ROI if provided
     roi = None
@@ -424,20 +474,9 @@ def main() -> None:
 
     keypoints_dict = pose_seq.to_keypoints_dict()
     metrics = extract_metrics(keypoints_dict, events, pitcher_throws=args.throws)
-    obp_comparison = metrics.to_obp_comparison_dict()
+    obp_dict = metrics.to_obp_comparison_dict()
 
-    # Load OBP benchmarks for context if available
-    obp_medians: dict[str, float] = {}
-    poi_path = Path("data/obp/poi_metrics.csv")
-    if poi_path.exists():
-        try:
-            obp = OBPBenchmarks().load()
-            benchmarks = obp.compute_benchmarks()
-            obp_medians = {b.metric: b.percentiles[50] for b in benchmarks}
-        except Exception as exc:
-            print(f"  Warning: Could not load OBP benchmarks: {exc}")
-
-    # Build metrics rows for the report
+    # Build metrics display rows
     metrics_to_show = [
         ("elbow_flexion_fp", "Elbow Flexion @ FP", "deg"),
         ("shoulder_abduction_fp", "Shoulder Abduction @ FP", "deg"),
@@ -452,7 +491,7 @@ def main() -> None:
         ("lead_knee_angle_br", "Lead Knee Angle @ BR", "deg"),
     ]
 
-    # Map internal metric names to OBP names for median lookup
+    # Map internal metric names to OBP names for comparison lookup
     internal_to_obp = {
         "elbow_flexion_fp": "elbow_flexion_fp",
         "shoulder_abduction_fp": "shoulder_abduction_fp",
@@ -467,25 +506,169 @@ def main() -> None:
         "lead_knee_angle_br": None,
     }
 
+    # =========================================================================
+    # Stage 5: OBP Benchmark Comparison
+    # =========================================================================
+    print("\n" + "=" * 60)
+    print("Stage 5: OBP Benchmark Comparison")
+    print("=" * 60)
+
+    obp = None
+    obp_comparisons: list[dict] = []
+    poi_path = Path("data/obp/poi_metrics.csv")
+    if poi_path.exists() and obp_dict:
+        try:
+            obp = OBPBenchmarks().load()
+            obp_comparisons = obp.compare_to_benchmarks(obp_dict)
+            print(f"  Compared {len(obp_comparisons)} metrics against OBP benchmarks")
+            for c in obp_comparisons:
+                pct = c["percentile_rank"]
+                pct_str = f"{pct:.0f}th" if pct is not None else "N/A"
+                print(f"    {c['display_name']}: {c['value']:.1f} → {pct_str} percentile [{c['flag']}]")
+        except Exception as exc:
+            print(f"  Warning: Could not load OBP benchmarks: {exc}")
+    else:
+        print("  Skipped: no OBP data or no metrics to compare")
+
+    # Build a lookup from OBP metric name to comparison result
+    obp_comp_map = {c["metric"]: c for c in obp_comparisons}
+
+    # Generate percentile charts
+    percentile_charts_html: list[str] = []
+    if obp_comparisons:
+        try:
+            radar_fig = plot_pitcher_comparison(obp_comparisons)
+            percentile_charts_html.append(
+                radar_fig.to_html(full_html=False, include_plotlyjs=False)
+            )
+            gauges_fig = plot_percentile_gauges(obp_comparisons)
+            percentile_charts_html.append(
+                gauges_fig.to_html(full_html=False, include_plotlyjs=False)
+            )
+            print(f"  Generated {len(percentile_charts_html)} percentile charts")
+        except Exception as exc:
+            print(f"  Warning: Could not generate percentile charts: {exc}")
+
+    # Build metrics rows with percentile data
     metrics_rows: list[dict] = []
     for metric_key, display_name, unit in metrics_to_show:
         value = getattr(metrics, metric_key, None)
         obp_key = internal_to_obp.get(metric_key)
-        median = obp_medians.get(obp_key) if obp_key else None
+        comp = obp_comp_map.get(obp_key) if obp_key else None
+
+        median = comp["benchmark_median"] if comp else None
+        percentile = comp["percentile_rank"] if comp else None
 
         metrics_rows.append({
             "metric": display_name,
             "value": f"{value:.1f}" if value is not None else "--",
             "unit": unit,
             "obp_median": f"{median:.1f}" if median is not None else "--",
+            "percentile": f"{percentile:.0f}" if percentile is not None else "--",
             "status": "ok" if value is not None else "missing",
         })
 
     computed_count = sum(1 for r in metrics_rows if r["status"] == "ok")
-    print(f"  Computed {computed_count} / {len(metrics_to_show)} metrics")
-    for row in metrics_rows:
-        if row["status"] == "ok":
-            print(f"    {row['metric']}: {row['value']} {row['unit']}")
+    print(f"  Metrics: {computed_count} / {len(metrics_to_show)} computed")
+
+    # =========================================================================
+    # Stage 6: Youth Normalization (conditional)
+    # =========================================================================
+    print("\n" + "=" * 60)
+    print("Stage 6: Youth Normalization")
+    print("=" * 60)
+
+    youth_comparisons = None
+    youth_context = None
+    if youth_profile and obp is not None:
+        profile = YouthPitcherProfile(
+            age=youth_profile["age"],
+            height_cm=youth_profile["height_cm"],
+            weight_kg=youth_profile["weight_kg"],
+            throws=args.throws,
+        )
+        normalizer = YouthNormalizer(obp, profile)
+        youth_comparisons = normalizer.compare(obp_dict)
+        youth_context = normalizer.generate_youth_report_context()
+        youth_profile["developmental_stage"] = normalizer.dev_stage.value
+        print(f"  Pitcher: {youth_profile['age']}yo, {youth_profile['height_in']}in, {youth_profile['weight_lbs']}lbs")
+        print(f"  Developmental stage: {normalizer.dev_stage.value.replace('_', ' ').title()}")
+        print(f"  Youth comparisons: {len(youth_comparisons)} metrics")
+    else:
+        if youth_profile:
+            print("  Skipped: OBP data not available")
+        else:
+            print("  Skipped: no youth profile provided (adult comparison path)")
+
+    # =========================================================================
+    # Stage 7: Coaching Report
+    # =========================================================================
+    print("\n" + "=" * 60)
+    print("Stage 7: Coaching Report")
+    print("=" * 60)
+
+    coaching_text = ""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+
+    # Build additional context for non-OBP metrics
+    additional_lines = []
+    if metrics.arm_slot_angle is not None:
+        additional_lines.append(
+            f"Arm slot angle: {metrics.arm_slot_angle:.1f}° "
+            "(camera angle dependent — from front-quarter view, reads ~15-22° low)"
+        )
+    if metrics.lead_knee_angle_fp is not None:
+        additional_lines.append(f"Lead knee angle at foot plant: {metrics.lead_knee_angle_fp:.1f}°")
+    if metrics.lead_knee_angle_br is not None:
+        additional_lines.append(f"Lead knee angle at ball release: {metrics.lead_knee_angle_br:.1f}°")
+    if metrics.stride_length_pct_height is not None:
+        additional_lines.append(
+            f"Stride length: {metrics.stride_length_pct_height:.0f}% of height "
+            "(ASMI target: 75-85%)"
+        )
+    additional_context = "\n".join(additional_lines) if additional_lines else None
+
+    # Append measurement caveats from prompt file
+    caveats = load_prompt("measurement_caveats")
+    if caveats and additional_context:
+        additional_context += f"\n\nMEASUREMENT CAVEATS:\n{caveats}"
+    elif caveats:
+        additional_context = f"MEASUREMENT CAVEATS:\n{caveats}"
+
+    if youth_comparisons and youth_context:
+        # Youth coaching path
+        if api_key:
+            try:
+                print("  Generating youth coaching report via Claude API...")
+                coaching_text = generate_youth_coaching_report(
+                    youth_comparisons, youth_context,
+                    additional_context=additional_context,
+                )
+                print("  Youth coaching report generated (API)")
+            except Exception as exc:
+                print(f"  Warning: API call failed ({exc}), using offline fallback")
+                coaching_text = generate_youth_report_offline(youth_comparisons, youth_context)
+        else:
+            coaching_text = generate_youth_report_offline(youth_comparisons, youth_context)
+            print("  Youth coaching report generated (offline)")
+    elif obp_comparisons:
+        # Adult coaching path
+        if api_key:
+            try:
+                print("  Generating coaching report via Claude API...")
+                coaching_text = generate_coaching_report(
+                    obp_comparisons,
+                    additional_context=additional_context,
+                )
+                print("  Coaching report generated (API)")
+            except Exception as exc:
+                print(f"  Warning: API call failed ({exc}), using offline fallback")
+                coaching_text = generate_report_offline(obp_comparisons)
+        else:
+            coaching_text = generate_report_offline(obp_comparisons)
+            print("  Coaching report generated (offline)")
+    else:
+        print("  Skipped: no benchmark comparisons available")
 
     # =========================================================================
     # Save Pipeline Results as JSON
@@ -540,8 +723,24 @@ def main() -> None:
         "warnings": validation_warnings,
     }
 
+    # Enrich results.json with Phase 5 data
+    if obp_comparisons:
+        pipeline_output["obp_comparisons"] = [
+            {k: v for k, v in c.items()}
+            for c in obp_comparisons
+        ]
+    if coaching_text:
+        pipeline_output["coaching_report"] = coaching_text
+    if youth_profile:
+        pipeline_output["youth_profile"] = {
+            "age": youth_profile["age"],
+            "height_in": youth_profile["height_in"],
+            "weight_lbs": youth_profile["weight_lbs"],
+            "developmental_stage": youth_profile.get("developmental_stage"),
+        }
+
     results_path = output_dir / "results.json"
-    results_path.write_text(json.dumps(pipeline_output, indent=2))
+    results_path.write_text(json.dumps(pipeline_output, indent=2, default=str))
     print(f"  Results saved: {results_path}")
 
     # =========================================================================
@@ -573,6 +772,9 @@ def main() -> None:
         key_frame_images=key_frame_images,
         metrics_rows=metrics_rows,
         diagnostics=diagnostics,
+        coaching_html=coaching_text,
+        percentile_charts_html=percentile_charts_html,
+        pitcher_profile=youth_profile,
     )
 
     report_path = output_dir / "report.html"
