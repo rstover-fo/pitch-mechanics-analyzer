@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import base64
+import json
 import sys
 import webbrowser
 from pathlib import Path
@@ -483,17 +484,57 @@ def main() -> None:
             print(f"    {row['metric']}: {row['value']} {row['unit']}")
 
     # =========================================================================
+    # Save Pipeline Results as JSON
+    # =========================================================================
+    avg_confidence = float(np.mean([
+        conf
+        for pf in pose_seq.frames
+        for conf in pf.confidence.values()
+    ]))
+
+    pipeline_output = {
+        "video": args.video.name,
+        "backend": args.backend,
+        "pitcher_throws": args.throws,
+        "fps": fps,
+        "total_frames": video_info.total_frames,
+        "events": {
+            "leg_lift": events.leg_lift_apex,
+            "foot_plant": events.foot_plant,
+            "max_er": events.max_external_rotation,
+            "ball_release": events.ball_release,
+        },
+        "metrics": {
+            row["metric"]: row["value"]
+            for row in metrics_rows
+            if row["status"] == "ok"
+        },
+        "metrics_raw": {
+            k: getattr(metrics, k)
+            for k in [
+                "elbow_flexion_fp", "torso_anterior_tilt_fp", "lead_knee_angle_fp",
+                "max_shoulder_external_rotation", "torso_anterior_tilt_br",
+                "arm_slot_angle", "lead_knee_angle_br",
+            ]
+            if getattr(metrics, k) is not None
+        },
+        "diagnostics": {
+            "frames_with_poses": len(pose_seq.frames),
+            "avg_confidence": float(avg_confidence),
+        },
+    }
+
+    results_path = output_dir / "results.json"
+    results_path.write_text(json.dumps(pipeline_output, indent=2))
+    print(f"  Results saved: {results_path}")
+
+    # =========================================================================
     # Assembly: Build HTML Report
     # =========================================================================
     print("\n" + "=" * 60)
     print("Assembling Report")
     print("=" * 60)
 
-    avg_confidence = np.mean([
-        conf
-        for pf in pose_seq.frames
-        for conf in pf.confidence.values()
-    ])
     events_detected = sum(1 for v in event_names.values() if v is not None)
 
     diagnostics = {
