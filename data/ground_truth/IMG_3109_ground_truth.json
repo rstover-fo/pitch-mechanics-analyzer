@@ -1,0 +1,17 @@
+{
+  "video": "IMG_3109.MOV",
+  "labeler": "rob",
+  "events": {
+    "leg_lift": 76,
+    "foot_plant": 96,
+    "max_er": 96,
+    "ball_release": 100
+  },
+  "detected_events": {
+    "leg_lift": 73,
+    "foot_plant": 82,
+    "max_er": 85,
+    "ball_release": 96
+  },
+  "notes": "knee detection drift here, too, probably 4-5 inches of drift down to mid-shin"
+}
