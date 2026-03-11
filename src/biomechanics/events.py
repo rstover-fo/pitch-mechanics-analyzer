@@ -82,19 +82,23 @@ def detect_leg_lift(
 
 def detect_foot_plant_from_keypoints(
     lead_ankle_y: np.ndarray,
-    lead_ankle_vy: Optional[np.ndarray] = None,
+    lead_ankle_x: Optional[np.ndarray] = None,
     fps: float = 30.0,
     before_frame: Optional[int] = None,
 ) -> Optional[int]:
-    """Detect foot plant using the stride drop-then-rise pattern in ankle Y.
+    """Detect foot plant as the frame where the stride foot stops moving forward.
 
-    In screen coordinates: ankle Y drops during leg lift/stride (foot rises),
-    then rises back to baseline when the foot plants (foot comes down).
-    Foot plant = where ankle Y recovers to near-baseline after the stride dip.
+    During the stride, the lead ankle moves forward (X increases for RHP)
+    and downward. At foot plant, forward motion stops abruptly. This is
+    more reliable than Y-recovery-to-baseline because it doesn't require
+    knowing the ground plane position.
+
+    Falls back to Y-recovery if ankle X is not provided.
 
     Args:
-        lead_ankle_y: Raw Y-coordinate of lead ankle (screen coords: higher = lower).
-        lead_ankle_vy: Y-velocity of lead ankle (unused, kept for API compat).
+        lead_ankle_y: Raw Y-coordinate of lead ankle (screen coords).
+        lead_ankle_x: Raw X-coordinate of lead ankle. If provided, uses
+            X-velocity stabilization (preferred). If None, uses Y-recovery.
         fps: Video frame rate.
         before_frame: Only search before this frame (e.g., before MER).
     """
@@ -102,9 +106,62 @@ def detect_foot_plant_from_keypoints(
         return None
 
     from scipy.ndimage import uniform_filter1d
+
+    # Primary: ankle X stabilization (foot stops moving forward)
+    if lead_ankle_x is not None:
+        result = _detect_fp_ankle_x_stop(lead_ankle_x, fps, before_frame)
+        if result is not None:
+            return result
+
+    # Fallback: ankle Y recovery to baseline
+    return _detect_fp_y_recovery(lead_ankle_y, fps, before_frame)
+
+
+def _detect_fp_ankle_x_stop(
+    lead_ankle_x: np.ndarray,
+    fps: float,
+    before_frame: Optional[int],
+) -> Optional[int]:
+    """Detect foot plant by finding where ankle X velocity drops to near zero."""
+    from scipy.ndimage import uniform_filter1d
+
+    smoothed_x = uniform_filter1d(lead_ankle_x, size=5)
+    vx = np.gradient(smoothed_x)
+    smoothed_vx = uniform_filter1d(vx, size=3)
+
+    end = before_frame if before_frame is not None else len(smoothed_vx)
+    start = max(0, end - int(fps * 1.5))
+    region = smoothed_vx[start:end]
+
+    if len(region) < 10:
+        return None
+
+    # Find peak forward velocity during stride
+    peak_idx = int(np.argmax(region))
+    peak_vx = region[peak_idx]
+
+    if peak_vx < 3:
+        return None
+
+    # Foot plant = where forward velocity drops below 30% of peak
+    threshold = peak_vx * 0.30
+    for i in range(peak_idx, len(region)):
+        if region[i] < threshold:
+            return int(i + start)
+
+    return None
+
+
+def _detect_fp_y_recovery(
+    lead_ankle_y: np.ndarray,
+    fps: float,
+    before_frame: Optional[int],
+) -> Optional[int]:
+    """Fallback: detect foot plant via ankle Y recovery to baseline."""
+    from scipy.ndimage import uniform_filter1d
+
     smoothed = uniform_filter1d(lead_ankle_y, size=5)
 
-    # Search window: up to 2s before the reference frame
     end = before_frame if before_frame is not None else len(smoothed)
     start = max(0, end - int(fps * 2.0))
     region = smoothed[start:end]
@@ -112,27 +169,20 @@ def detect_foot_plant_from_keypoints(
     if len(region) < 10:
         return None
 
-    # Step 1: Find the baseline ankle Y (standing level) from the early part of the window
     early_portion = region[: max(5, len(region) // 4)]
     baseline = np.median(early_portion)
-
-    # Step 2: Find the stride dip — minimum ankle Y (foot at highest point during stride)
     dip_idx = int(np.argmin(region))
     dip_value = region[dip_idx]
     dip_depth = baseline - dip_value
 
-    # If the dip is too shallow (< 5% of baseline), no real stride detected
     if dip_depth < baseline * 0.05:
         return None
 
-    # Step 3: From the dip, look forward for where ankle Y recovers to near-baseline
-    # Foot plant = first frame after the dip where ankle Y rises to within 15% of baseline
     recovery_threshold = baseline - dip_depth * 0.15
     for i in range(dip_idx, len(region)):
         if region[i] >= recovery_threshold:
             return int(i + start)
 
-    # Fallback: frame closest to MER where ankle is near max Y
     return int(np.argmax(region[dip_idx:]) + dip_idx + start)
 
 

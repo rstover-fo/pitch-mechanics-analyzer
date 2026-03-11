@@ -202,8 +202,9 @@ def main() -> None:
     lead_knee_traj = pose_seq.get_joint_trajectory(f"{lead_side}_knee")
     lead_knee_y_inverted = -lead_knee_traj[:, 1]
 
-    # Lead ankle Y trajectory (inverted for plotting, raw for detection)
+    # Lead ankle trajectory (X for foot plant detection, Y for plotting)
     lead_ankle_traj = pose_seq.get_joint_trajectory(f"{lead_side}_ankle")
+    lead_ankle_x_raw = lead_ankle_traj[:, 0]
     lead_ankle_y_raw = lead_ankle_traj[:, 1]
     lead_ankle_y_inverted = -lead_ankle_y_raw
 
@@ -251,7 +252,7 @@ def main() -> None:
         )
 
         events.foot_plant = detect_foot_plant_from_keypoints(
-            lead_ankle_y_raw, fps=fps,
+            lead_ankle_y_raw, lead_ankle_x=lead_ankle_x_raw, fps=fps,
             before_frame=events.max_external_rotation,
         )
 
@@ -262,7 +263,9 @@ def main() -> None:
     else:
         print("  WARNING: Could not find delivery anchor (MER). Falling back to independent detection.")
         events.leg_lift_apex = detect_leg_lift(lead_knee_y_inverted)
-        events.foot_plant = detect_foot_plant_from_keypoints(lead_ankle_y_raw, fps=fps)
+        events.foot_plant = detect_foot_plant_from_keypoints(
+            lead_ankle_y_raw, lead_ankle_x=lead_ankle_x_raw, fps=fps,
+        )
         events.max_external_rotation = detect_max_external_rotation(
             shoulder_er_series, after_frame=events.foot_plant,
         )
