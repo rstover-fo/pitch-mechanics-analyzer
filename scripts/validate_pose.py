@@ -30,6 +30,7 @@ from src.biomechanics.events import (
     detect_foot_plant_from_keypoints,
     detect_leg_lift,
     detect_max_external_rotation,
+    find_delivery_anchor,
 )
 from src.biomechanics.features import angle_between_points, extract_metrics
 from src.biomechanics.benchmarks import METRIC_DISPLAY_NAMES, OBPBenchmarks
@@ -85,10 +86,24 @@ def main() -> None:
         help="Output directory (default: data/outputs/validate_<video_stem>/)",
     )
     parser.add_argument(
+        "--roi", type=str, default=None,
+        help="Region of interest as x1,y1,x2,y2 (pixels). Selects the person "
+             "closest to this region instead of highest confidence.",
+    )
+    parser.add_argument(
         "--no-open", action="store_true",
         help="Don't auto-open the report in a browser",
     )
     args = parser.parse_args()
+
+    # Parse ROI if provided
+    roi = None
+    if args.roi:
+        parts = [int(x.strip()) for x in args.roi.split(",")]
+        if len(parts) != 4:
+            print("Error: --roi must be x1,y1,x2,y2 (4 integers)")
+            sys.exit(1)
+        roi = tuple(parts)
 
     if not args.video.exists():
         print(f"Error: Video not found: {args.video}")
@@ -122,6 +137,8 @@ def main() -> None:
     if args.backend == "yolov8":
         backend_kwargs["model_size"] = args.model_size
         backend_kwargs["confidence"] = args.confidence
+        if roi is not None:
+            backend_kwargs["roi"] = roi
 
     print(f"\n  Running {args.backend} pose estimation...")
     pose_seq = extract_poses(args.video, backend=args.backend, **backend_kwargs)
@@ -215,19 +232,41 @@ def main() -> None:
                 hip_center,
             )
 
-    # Detect events
+    # Detect events using anchor-based approach:
+    # 1. Find MER (anchor) from shoulder ER rise-then-drop pattern
+    # 2. Ball release = peak wrist speed shortly after MER
+    # 3. Foot plant = ankle stabilization before MER
+    # 4. Leg lift = peak knee height before foot plant
     events = DeliveryEvents(fps=fps)
-    events.leg_lift_apex = detect_leg_lift(lead_knee_y_inverted)
 
-    events.foot_plant = detect_foot_plant_from_keypoints(lead_ankle_y_raw, fps=fps)
-
-    events.max_external_rotation = detect_max_external_rotation(
-        shoulder_er_series, after_frame=events.foot_plant,
+    events.max_external_rotation = find_delivery_anchor(
+        shoulder_er_series, wrist_speed, fps=fps,
     )
 
-    events.ball_release = detect_ball_release(
-        wrist_speed, after_frame=events.max_external_rotation,
-    )
+    if events.max_external_rotation is not None:
+        events.ball_release = detect_ball_release(
+            wrist_speed, after_frame=events.max_external_rotation,
+        )
+
+        events.foot_plant = detect_foot_plant_from_keypoints(
+            lead_ankle_y_raw, fps=fps,
+            before_frame=events.max_external_rotation,
+        )
+
+        events.leg_lift_apex = detect_leg_lift(
+            lead_knee_y_inverted,
+            before_frame=events.foot_plant,
+        )
+    else:
+        print("  WARNING: Could not find delivery anchor (MER). Falling back to independent detection.")
+        events.leg_lift_apex = detect_leg_lift(lead_knee_y_inverted)
+        events.foot_plant = detect_foot_plant_from_keypoints(lead_ankle_y_raw, fps=fps)
+        events.max_external_rotation = detect_max_external_rotation(
+            shoulder_er_series, after_frame=events.foot_plant,
+        )
+        events.ball_release = detect_ball_release(
+            wrist_speed, after_frame=events.max_external_rotation,
+        )
 
     # Print detected events
     event_names = {

@@ -175,11 +175,41 @@ def load_video(video_path: str | Path) -> VideoInfo:
     return info
 
 
+def _select_person_by_roi(
+    boxes: np.ndarray,
+    roi: tuple[int, int, int, int],
+) -> int:
+    """Select the detected person whose bbox center is closest to the ROI center.
+
+    Args:
+        boxes: (N, 4) array of bounding boxes [x1, y1, x2, y2].
+        roi: Region of interest as (x1, y1, x2, y2) in pixels.
+
+    Returns:
+        Index of the best-matching person detection.
+    """
+    roi_cx = (roi[0] + roi[2]) / 2
+    roi_cy = (roi[1] + roi[3]) / 2
+
+    best_idx = 0
+    best_dist = float("inf")
+    for i, box in enumerate(boxes):
+        cx = (box[0] + box[2]) / 2
+        cy = (box[1] + box[3]) / 2
+        dist = np.sqrt((cx - roi_cx) ** 2 + (cy - roi_cy) ** 2)
+        if dist < best_dist:
+            best_dist = dist
+            best_idx = i
+
+    return best_idx
+
+
 def extract_poses_yolo(
     video_path: str | Path,
     model_size: str = "n",
     confidence: float = 0.5,
     target_fps: Optional[float] = None,
+    roi: Optional[tuple[int, int, int, int]] = None,
 ) -> PoseSequence:
     """Run YOLOv8-pose on a video and return standardized keypoint sequence.
 
@@ -188,6 +218,9 @@ def extract_poses_yolo(
         model_size: YOLOv8 model variant (n=nano, s=small, m=medium, l=large, x=xlarge).
         confidence: Minimum detection confidence.
         target_fps: Resample to this FPS. None = use original.
+        roi: Region of interest (x1, y1, x2, y2) in pixels. When set,
+             selects the person whose bbox center is closest to the ROI
+             center instead of the highest-confidence detection.
 
     Returns:
         PoseSequence with per-frame keypoint detections.
@@ -220,8 +253,14 @@ def extract_poses_yolo(
         if len(results) > 0 and results[0].keypoints is not None:
             kpts = results[0].keypoints
             if len(kpts.data) > 0:
-                # Take the highest-confidence person detection
-                person_kpts = kpts.data[0].cpu().numpy()  # (17, 3) -> x, y, conf
+                # Select which person to track
+                person_idx = 0
+                if roi is not None and results[0].boxes is not None:
+                    all_boxes = results[0].boxes.xyxy.cpu().numpy()
+                    if len(all_boxes) > 1:
+                        person_idx = _select_person_by_roi(all_boxes, roi)
+
+                person_kpts = kpts.data[person_idx].cpu().numpy()  # (17, 3)
 
                 keypoints = {}
                 confidences = {}
@@ -230,10 +269,10 @@ def extract_poses_yolo(
                         keypoints[name] = person_kpts[idx, :2]
                         confidences[name] = float(person_kpts[idx, 2])
 
-                # Get bounding box
+                # Get bounding box for the selected person
                 bbox = None
-                if results[0].boxes is not None and len(results[0].boxes) > 0:
-                    bbox = results[0].boxes[0].xyxy[0].cpu().numpy()
+                if results[0].boxes is not None and len(results[0].boxes) > person_idx:
+                    bbox = results[0].boxes[person_idx].xyxy[0].cpu().numpy()
 
                 frames.append(PoseFrame(
                     frame_idx=frame_idx,
