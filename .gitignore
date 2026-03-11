@@ -32,3 +32,9 @@ Thumbs.db
 # YOLOv8 model downloads
 *.pt
 runs/
+
+# MotionBERT checkpoint
+data/models/*.bin
+
+# Vendored code (tracked separately)
+vendor/
