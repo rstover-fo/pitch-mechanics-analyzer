@@ -29,7 +29,7 @@ from src.pose.estimator import (
 )
 
 
-CHECKPOINT_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "models" / "motionbert_lite.bin"
+CHECKPOINT_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "models" / "motionbert_lite_weights.pt"
 
 # H36M joint indices (17 joints)
 H36M_JOINTS = {
@@ -140,9 +140,8 @@ def load_motionbert(
         num_joints=17,
     )
 
-    checkpoint = torch.load(str(checkpoint_path), map_location=device, weights_only=False)
-    state_dict = checkpoint["model_pos"]
-    state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+    state_dict = torch.load(str(checkpoint_path), map_location=device, weights_only=True)
+    # Note: module. prefix already stripped during checkpoint conversion
     model.load_state_dict(state_dict, strict=True)
     model.eval()
     model.to(device)
