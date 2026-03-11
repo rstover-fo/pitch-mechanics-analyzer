@@ -35,6 +35,7 @@ from src.biomechanics.events import (
 )
 from src.biomechanics.features import angle_between_points, extract_metrics
 from src.biomechanics.benchmarks import METRIC_DISPLAY_NAMES, OBPBenchmarks
+from src.biomechanics.validation import validate_pipeline_output
 from src.viz.skeleton import draw_angle_arc, draw_skeleton
 from src.viz.trajectories import (
     plot_confidence_heatmap,
@@ -492,6 +493,17 @@ def main() -> None:
         for conf in pf.confidence.values()
     ]))
 
+    # Run sanity checks
+    validation_warnings = validate_pipeline_output(
+        events, avg_confidence=avg_confidence, metrics=metrics.__dict__,
+    )
+    if validation_warnings:
+        print("\n  Validation warnings:")
+        for w in validation_warnings:
+            print(f"    [{w['severity']}] {w['code']}: {w['message']}")
+    else:
+        print("\n  No validation warnings")
+
     pipeline_output = {
         "video": args.video.name,
         "backend": args.backend,
@@ -522,6 +534,7 @@ def main() -> None:
             "frames_with_poses": len(pose_seq.frames),
             "avg_confidence": float(avg_confidence),
         },
+        "warnings": validation_warnings,
     }
 
     results_path = output_dir / "results.json"
@@ -543,6 +556,7 @@ def main() -> None:
         "avg_confidence": f"{avg_confidence:.3f}",
         "events_detected": f"{events_detected} / 4",
         "metrics_computed": f"{computed_count} / {len(metrics_to_show)}",
+        "warnings": "; ".join(w["message"] for w in validation_warnings) if validation_warnings else "none",
     }
 
     report_html = build_report_html(
