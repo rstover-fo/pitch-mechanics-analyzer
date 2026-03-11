@@ -14,6 +14,7 @@ from src.pose.lifter import (
     H36M_JOINTS,
     coco_to_h36m,
     h36m_to_pitching_joints,
+    infer_3d,
     is_3d_available,
     lift_to_3d,
 )
@@ -191,6 +192,17 @@ class TestLiftTo3d:
             result = lift_to_3d(sample_pose_sequence)
             assert result == {}
             assert not result  # Empty dict is falsy
+
+
+class TestInfer3d:
+    def test_rejects_sequence_over_243_frames(self):
+        """infer_3d raises ValueError when T > 243."""
+        import torch.nn as nn
+
+        dummy_model = nn.Linear(1, 1)  # Won't be called
+        kpts = np.random.randn(244, 17, 3)
+        with pytest.raises(ValueError, match="exceeds MotionBERT max of 243"):
+            infer_3d(dummy_model, kpts)
 
 
 # --- PoseFrame 3D support ---

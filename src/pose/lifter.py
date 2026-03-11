@@ -12,7 +12,6 @@ Usage:
         # kpts_3d: dict[str, np.ndarray] mapping joint names to (T, 3) arrays
 """
 
-import copy
 from functools import partial
 from pathlib import Path
 
@@ -30,7 +29,7 @@ from src.pose.estimator import (
 )
 
 
-CHECKPOINT_PATH = Path("data/models/motionbert_lite.bin")
+CHECKPOINT_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "models" / "motionbert_lite.bin"
 
 # H36M joint indices (17 joints)
 H36M_JOINTS = {

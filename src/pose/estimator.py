@@ -126,7 +126,7 @@ class PoseSequence:
         """Convert to dict format expected by feature extraction.
 
         Returns:
-            Dict mapping joint names to (N_frames, 2) arrays.
+            Dict mapping joint names to (N_frames, D) arrays (D=2 or 3).
         """
         result = {}
         for joint in PITCHING_JOINTS:
@@ -283,9 +283,8 @@ def extract_poses_yolo(
                 keypoints = {}
                 confidences = {}
                 for name, idx in YOLO_KEYPOINTS.items():
-                    if name in PITCHING_JOINTS or name == "nose":
-                        keypoints[name] = person_kpts[idx, :2]
-                        confidences[name] = float(person_kpts[idx, 2])
+                    keypoints[name] = person_kpts[idx, :2]
+                    confidences[name] = float(person_kpts[idx, 2])
 
                 # Get bounding box for the selected person
                 bbox = None

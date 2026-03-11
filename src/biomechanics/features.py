@@ -256,7 +256,7 @@ def extract_metrics(
             metrics.lead_knee_angle_br = angle_between_points(lead_hip_pt, lead_knee_pt, lead_ankle_pt)
 
     # --- 3D-specific metrics ---
-    if use_3d and events.foot_plant is not None:
+    if use_3d:
         from src.biomechanics.angles_3d import (
             compute_hip_shoulder_separation_3d,
             compute_shoulder_abduction_3d,
@@ -264,9 +264,8 @@ def extract_metrics(
             compute_torso_lateral_tilt_3d,
         )
 
+    if use_3d and events.foot_plant is not None:
         fp = events.foot_plant
-        throw_side = "right" if pitcher_throws == "R" else "left"
-        lead_side = "left" if pitcher_throws == "R" else "right"
 
         l_hip = at("left_hip", fp)
         r_hip = at("right_hip", fp)
@@ -297,8 +296,6 @@ def extract_metrics(
 
     # --- 3D-specific: torso lateral tilt at ball release ---
     if use_3d and events.ball_release is not None:
-        from src.biomechanics.angles_3d import compute_torso_lateral_tilt_3d
-
         br = events.ball_release
         l_hip = at("left_hip", br)
         r_hip = at("right_hip", br)

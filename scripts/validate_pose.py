@@ -487,7 +487,7 @@ def main() -> None:
                 print(f"  3D lifting: {len(keypoints_3d)} joints, {len(next(iter(keypoints_3d.values())))} frames")
             else:
                 print("  3D lifting failed — falling back to 2D")
-        elif not args.no_3d:
+        else:
             print("\n  (MotionBERT checkpoint not found — using 2D only)")
 
     # =========================================================================
