@@ -575,11 +575,11 @@ if youth_profile:
 - [x] All 89 existing tests pass (`pytest tests/ -v`) — 113 total now
 - [x] New tests in `test_coaching_integration.py` pass — 24 tests
 - [x] Lint passes (syntax verified, ruff not installed)
-- [ ] Pipeline runs end-to-end on IMG_3106.MOV with youth flags
-- [ ] Pipeline runs end-to-end without youth flags (adult path)
-- [ ] Pipeline runs without ANTHROPIC_API_KEY (offline fallback)
-- [ ] HTML report opens in browser with coaching section visible
-- [ ] results.json contains obp_comparisons and coaching_report keys
+- [x] Pipeline runs end-to-end on IMG_3106.MOV with youth flags
+- [x] Pipeline runs end-to-end without youth flags (adult path)
+- [x] Pipeline runs without ANTHROPIC_API_KEY (offline fallback)
+- [x] HTML report opens in browser with coaching section visible
+- [x] results.json contains obp_comparisons and coaching_report keys
 
 ## References
 
