@@ -140,6 +140,14 @@ python scripts/analyze_video.py --video path/to/video.mp4
 pytest tests/ -v
 ```
 
+## Documented Solutions
+Check `docs/solutions/` before debugging — past fixes are organized by category:
+- `integration-issues/` — external tool/library gotchas (e.g., YOLOv8 person tracking)
+- `logic-errors/` — algorithm/detection fixes (e.g., event ordering, foot plant false triggers)
+- `runtime-errors/` — environment/execution issues
+
+Each file has YAML frontmatter with `tags`, `symptoms`, and `module` for quick filtering.
+
 ## Environment Variables
 - `ANTHROPIC_API_KEY` — for coaching insight generation (phase 5)
 - `OBP_DATA_PATH` — path to OBP data directory (defaults to data/obp/)
