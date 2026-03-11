@@ -255,3 +255,74 @@ class TestPoseSequence3d:
         df = seq.to_dataframe()
         assert "right_shoulder_z" in df.columns
         assert df["right_shoulder_z"].iloc[0] == 3.0
+
+
+# --- Regression tests ---
+
+class TestExtractMetrics2dUnchanged:
+    """Verify 2D metric extraction is identical to pre-3D behavior."""
+
+    def test_elbow_flexion_2d(self):
+        """2D extract_metrics produces same elbow flexion as before."""
+        from src.biomechanics.features import extract_metrics
+        from src.biomechanics.events import DeliveryEvents
+
+        # Build simple 2D keypoints
+        T = 10
+        keypoints = {}
+        for joint in PITCHING_JOINTS:
+            keypoints[joint] = np.zeros((T, 2))
+
+        # Set up a right-angle elbow at frame 5 (foot plant)
+        keypoints["right_shoulder"][5] = [100, 100]
+        keypoints["right_elbow"][5] = [100, 200]
+        keypoints["right_wrist"][5] = [200, 200]
+
+        events = DeliveryEvents(foot_plant=5, max_external_rotation=5, ball_release=7)
+        metrics = extract_metrics(keypoints, events, pitcher_throws="R", use_3d=False)
+
+        assert metrics.elbow_flexion_fp is not None
+        assert abs(metrics.elbow_flexion_fp - 90.0) < 1.0
+
+    def test_use_3d_false_no_3d_metrics(self):
+        """With use_3d=False, 3D-specific metrics remain None."""
+        from src.biomechanics.features import extract_metrics
+        from src.biomechanics.events import DeliveryEvents
+
+        T = 10
+        keypoints = {}
+        for joint in PITCHING_JOINTS:
+            keypoints[joint] = np.random.randn(T, 2) * 100 + 300
+
+        events = DeliveryEvents(foot_plant=5, max_external_rotation=6, ball_release=7)
+        metrics = extract_metrics(keypoints, events, pitcher_throws="R", use_3d=False)
+
+        # 3D-specific metrics should NOT be computed
+        assert metrics.hip_shoulder_separation_fp is None
+        assert metrics.shoulder_abduction_fp is None
+        assert metrics.shoulder_horizontal_abduction_fp is None
+
+    def test_use_3d_true_computes_3d_metrics(self):
+        """With use_3d=True and 3D keypoints, 3D metrics are computed."""
+        from src.biomechanics.features import extract_metrics
+        from src.biomechanics.events import DeliveryEvents
+
+        T = 10
+        keypoints = {}
+        joints_3d = PITCHING_JOINTS + ["spine", "neck", "root"]
+        for joint in joints_3d:
+            keypoints[joint] = np.random.randn(T, 3) * 0.3
+
+        # Place hips and shoulders at known positions for frame 5
+        keypoints["left_hip"][5] = [-0.2, 0.1, 0.0]
+        keypoints["right_hip"][5] = [0.2, 0.1, 0.0]
+        keypoints["left_shoulder"][5] = [-0.2, -0.5, -0.3]
+        keypoints["right_shoulder"][5] = [0.2, -0.5, 0.3]
+        keypoints["right_elbow"][5] = [0.5, -0.5, 0.5]
+
+        events = DeliveryEvents(foot_plant=5, max_external_rotation=6, ball_release=7)
+        metrics = extract_metrics(keypoints, events, pitcher_throws="R", use_3d=True)
+
+        assert metrics.hip_shoulder_separation_fp is not None
+        assert metrics.torso_lateral_tilt_fp is not None
+        assert metrics.shoulder_abduction_fp is not None
