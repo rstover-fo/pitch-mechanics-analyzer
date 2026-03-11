@@ -6,6 +6,7 @@ youth/developing pitchers.
 """
 
 import json
+from pathlib import Path
 from typing import Optional
 
 SYSTEM_PROMPT = """You are a pitching mechanics coach with deep knowledge of biomechanics.
@@ -73,6 +74,18 @@ Biomechanical concepts appropriate for youth coaching:
 - "Using your legs" (lead leg block) — ground force connection
 - "Finishing the pitch" (follow-through) — deceleration and arm health
 """
+
+
+def load_prompt(name: str) -> str:
+    """Load a coaching prompt from data/prompts/{name}.md.
+
+    Returns empty string if file not found (graceful fallback).
+    """
+    prompt_dir = Path(__file__).parent.parent.parent / "data" / "prompts"
+    path = prompt_dir / f"{name}.md"
+    if path.exists():
+        return path.read_text().strip()
+    return ""
 
 
 def build_analysis_prompt(
@@ -169,10 +182,16 @@ def generate_coaching_report(
         additional_context=additional_context,
     )
 
+    persona = load_prompt("adult_coaching_persona") or SYSTEM_PROMPT
+    knowledge = load_prompt("coaching_knowledge")
+    system = persona
+    if knowledge:
+        system += "\n\n" + knowledge
+
     message = client.messages.create(
         model=model,
         max_tokens=2000,
-        system=SYSTEM_PROMPT,
+        system=system,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -285,10 +304,16 @@ def generate_youth_coaching_report(
         additional_context=additional_context,
     )
 
+    persona = load_prompt("youth_coaching_persona") or YOUTH_SYSTEM_PROMPT
+    knowledge = load_prompt("coaching_knowledge")
+    system = persona
+    if knowledge:
+        system += "\n\n" + knowledge
+
     message = client.messages.create(
         model=model,
         max_tokens=2500,
-        system=YOUTH_SYSTEM_PROMPT,
+        system=system,
         messages=[{"role": "user", "content": prompt}],
     )
 
