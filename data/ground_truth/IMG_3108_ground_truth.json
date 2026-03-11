@@ -1,0 +1,17 @@
+{
+  "video": "IMG_3108.MOV",
+  "labeler": "rob",
+  "events": {
+    "leg_lift": 68,
+    "foot_plant": 92,
+    "max_er": 91,
+    "ball_release": 96
+  },
+  "detected_events": {
+    "leg_lift": 68,
+    "foot_plant": 80,
+    "max_er": 81,
+    "ball_release": 92
+  },
+  "notes": "knee point drifts a little down the shin at max knee/leg lift - probably 2-3 inches of drift"
+}

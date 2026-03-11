@@ -1,0 +1,12 @@
+{
+  "player_a": {
+    "clips": ["IMG_3106", "IMG_3107"],
+    "throws": "R",
+    "description": "Red shirt, driveway"
+  },
+  "player_b": {
+    "clips": ["IMG_3108", "IMG_3109"],
+    "throws": "R",
+    "description": "Blue shirt, driveway"
+  }
+}

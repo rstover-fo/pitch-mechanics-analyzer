@@ -1,0 +1,17 @@
+{
+  "video": "IMG_3106.MOV",
+  "labeler": "rob",
+  "events": {
+    "leg_lift": 125,
+    "foot_plant": 145,
+    "max_er": 147,
+    "ball_release": 151
+  },
+  "detected_events": {
+    "leg_lift": 124,
+    "foot_plant": 134,
+    "max_er": 135,
+    "ball_release": 141
+  },
+  "notes": ""
+}

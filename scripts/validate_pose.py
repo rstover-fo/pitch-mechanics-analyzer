@@ -13,6 +13,7 @@ Usage:
 
 import argparse
 import base64
+import json
 import sys
 import webbrowser
 from pathlib import Path
@@ -34,6 +35,7 @@ from src.biomechanics.events import (
 )
 from src.biomechanics.features import angle_between_points, extract_metrics
 from src.biomechanics.benchmarks import METRIC_DISPLAY_NAMES, OBPBenchmarks
+from src.biomechanics.validation import validate_pipeline_output
 from src.viz.skeleton import draw_angle_arc, draw_skeleton
 from src.viz.trajectories import (
     plot_confidence_heatmap,
@@ -200,8 +202,9 @@ def main() -> None:
     lead_knee_traj = pose_seq.get_joint_trajectory(f"{lead_side}_knee")
     lead_knee_y_inverted = -lead_knee_traj[:, 1]
 
-    # Lead ankle Y trajectory (inverted for plotting, raw for detection)
+    # Lead ankle trajectory (X for foot plant detection, Y for plotting)
     lead_ankle_traj = pose_seq.get_joint_trajectory(f"{lead_side}_ankle")
+    lead_ankle_x_raw = lead_ankle_traj[:, 0]
     lead_ankle_y_raw = lead_ankle_traj[:, 1]
     lead_ankle_y_inverted = -lead_ankle_y_raw
 
@@ -249,7 +252,7 @@ def main() -> None:
         )
 
         events.foot_plant = detect_foot_plant_from_keypoints(
-            lead_ankle_y_raw, fps=fps,
+            lead_ankle_y_raw, lead_ankle_x=lead_ankle_x_raw, fps=fps,
             before_frame=events.max_external_rotation,
         )
 
@@ -260,7 +263,9 @@ def main() -> None:
     else:
         print("  WARNING: Could not find delivery anchor (MER). Falling back to independent detection.")
         events.leg_lift_apex = detect_leg_lift(lead_knee_y_inverted)
-        events.foot_plant = detect_foot_plant_from_keypoints(lead_ankle_y_raw, fps=fps)
+        events.foot_plant = detect_foot_plant_from_keypoints(
+            lead_ankle_y_raw, lead_ankle_x=lead_ankle_x_raw, fps=fps,
+        )
         events.max_external_rotation = detect_max_external_rotation(
             shoulder_er_series, after_frame=events.foot_plant,
         )
@@ -483,17 +488,69 @@ def main() -> None:
             print(f"    {row['metric']}: {row['value']} {row['unit']}")
 
     # =========================================================================
+    # Save Pipeline Results as JSON
+    # =========================================================================
+    avg_confidence = float(np.mean([
+        conf
+        for pf in pose_seq.frames
+        for conf in pf.confidence.values()
+    ]))
+
+    # Run sanity checks
+    validation_warnings = validate_pipeline_output(
+        events, avg_confidence=avg_confidence, metrics=metrics.__dict__,
+    )
+    if validation_warnings:
+        print("\n  Validation warnings:")
+        for w in validation_warnings:
+            print(f"    [{w['severity']}] {w['code']}: {w['message']}")
+    else:
+        print("\n  No validation warnings")
+
+    pipeline_output = {
+        "video": args.video.name,
+        "backend": args.backend,
+        "pitcher_throws": args.throws,
+        "fps": fps,
+        "total_frames": video_info.total_frames,
+        "events": {
+            "leg_lift": events.leg_lift_apex,
+            "foot_plant": events.foot_plant,
+            "max_er": events.max_external_rotation,
+            "ball_release": events.ball_release,
+        },
+        "metrics": {
+            row["metric"]: row["value"]
+            for row in metrics_rows
+            if row["status"] == "ok"
+        },
+        "metrics_raw": {
+            k: getattr(metrics, k)
+            for k in [
+                "elbow_flexion_fp", "torso_anterior_tilt_fp", "lead_knee_angle_fp",
+                "max_shoulder_external_rotation", "torso_anterior_tilt_br",
+                "arm_slot_angle", "lead_knee_angle_br",
+            ]
+            if getattr(metrics, k) is not None
+        },
+        "diagnostics": {
+            "frames_with_poses": len(pose_seq.frames),
+            "avg_confidence": float(avg_confidence),
+        },
+        "warnings": validation_warnings,
+    }
+
+    results_path = output_dir / "results.json"
+    results_path.write_text(json.dumps(pipeline_output, indent=2))
+    print(f"  Results saved: {results_path}")
+
+    # =========================================================================
     # Assembly: Build HTML Report
     # =========================================================================
     print("\n" + "=" * 60)
     print("Assembling Report")
     print("=" * 60)
 
-    avg_confidence = np.mean([
-        conf
-        for pf in pose_seq.frames
-        for conf in pf.confidence.values()
-    ])
     events_detected = sum(1 for v in event_names.values() if v is not None)
 
     diagnostics = {
@@ -502,6 +559,7 @@ def main() -> None:
         "avg_confidence": f"{avg_confidence:.3f}",
         "events_detected": f"{events_detected} / 4",
         "metrics_computed": f"{computed_count} / {len(metrics_to_show)}",
+        "warnings": "; ".join(w["message"] for w in validation_warnings) if validation_warnings else "none",
     }
 
     report_html = build_report_html(
