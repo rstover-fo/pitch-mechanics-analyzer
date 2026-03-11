@@ -191,16 +191,20 @@ def find_delivery_anchor(
     wrist_speed: np.ndarray,
     fps: float = 30.0,
 ) -> Optional[int]:
-    """Find the MER frame by detecting the shoulder ER rise-then-rapid-drop pattern.
+    """Find the MER frame using ER trough before peak wrist speed.
 
-    The delivery signature: ER rises during arm cocking, peaks at MER, then
-    drops very rapidly during internal rotation/acceleration. This pattern is
-    unique to the pitching delivery and distinguishes it from walking, standing,
-    or other non-delivery movements.
+    From a 2D front-quarter camera angle, the approximate_shoulder_er_2d
+    signal is inverted relative to true 3D shoulder ER: as the arm lays
+    back further, the forearm aligns with the trunk and the measured angle
+    DECREASES. True MER therefore appears as the ER MINIMUM just before
+    the wrist speed explosion (arm acceleration phase).
+
+    Strategy: find the global wrist speed peak (reliable anchor), then
+    find the ER trough in the 0.5s window before it.
 
     Args:
-        shoulder_er: Shoulder ER angle over time (degrees).
-        wrist_speed: Wrist speed over time (for confirmation).
+        shoulder_er: Shoulder ER angle over time (degrees, 2D approximation).
+        wrist_speed: Wrist speed over time (pixels/second).
         fps: Video frame rate.
 
     Returns:
@@ -210,54 +214,24 @@ def find_delivery_anchor(
         return None
 
     from scipy.ndimage import uniform_filter1d
-    smoothed = uniform_filter1d(shoulder_er, size=5)
 
-    # Compute ER derivative (rate of change)
-    er_deriv = np.gradient(smoothed)
+    smoothed_er = uniform_filter1d(shoulder_er, size=5)
+    smoothed_ws = uniform_filter1d(wrist_speed, size=5)
 
-    # Find the most negative derivative (fastest ER drop = arm acceleration)
-    # This occurs just after MER during the actual delivery
-    smoothed_deriv = uniform_filter1d(er_deriv, size=3)
-
-    # Find significant negative spikes in the derivative
-    from scipy.signal import find_peaks
-    neg_deriv = -smoothed_deriv  # Invert so peaks = most negative derivative
-    peaks, props = find_peaks(neg_deriv, prominence=1.0, distance=int(fps * 0.3))
-
-    if len(peaks) == 0:
+    # Find the peak wrist speed — this is the most reliable delivery marker
+    peak_ws_frame = int(np.argmax(smoothed_ws))
+    if smoothed_ws[peak_ws_frame] < 100:
         return None
 
-    # Score each peak: prefer the one with highest ER value nearby AND high wrist speed
-    best_score = -1.0
-    best_mer = None
+    # Search for ER trough in 0.5s window before peak wrist speed
+    window_start = max(0, peak_ws_frame - int(fps * 0.5))
+    window_end = peak_ws_frame
 
-    for peak in peaks:
-        # MER should be just before this rapid-drop point
-        search_start = max(0, peak - int(fps * 0.3))
-        search_end = peak + 1
-        region = smoothed[search_start:search_end]
-        if len(region) == 0:
-            continue
+    region = smoothed_er[window_start:window_end]
+    if len(region) == 0:
+        return None
 
-        mer_candidate = int(np.argmax(region) + search_start)
-        er_value = smoothed[mer_candidate]
-
-        # Check wrist speed in a window around this delivery
-        wrist_window_start = mer_candidate
-        wrist_window_end = min(len(wrist_speed), mer_candidate + int(fps * 0.5))
-        if wrist_window_end <= wrist_window_start:
-            continue
-        wrist_peak = np.max(wrist_speed[wrist_window_start:wrist_window_end])
-
-        # Score: combine ER peak height with nearby wrist speed
-        # Higher ER at MER + higher wrist speed after = more likely actual delivery
-        score = er_value * 0.5 + (wrist_peak / (np.max(wrist_speed) + 1e-8)) * 100
-
-        if score > best_score:
-            best_score = score
-            best_mer = mer_candidate
-
-    return best_mer
+    return int(np.argmin(region) + window_start)
 
 
 def approximate_shoulder_er_2d(
