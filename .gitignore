@@ -36,5 +36,4 @@ runs/
 # MotionBERT checkpoint
 data/models/*.bin
 
-# Vendored code (tracked separately)
-vendor/
+# Vendored code — vendor/ IS tracked in git (small vendored files only)
