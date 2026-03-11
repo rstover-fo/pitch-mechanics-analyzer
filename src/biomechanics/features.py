@@ -119,12 +119,15 @@ def compute_elbow_flexion(shoulder: np.ndarray, elbow: np.ndarray, wrist: np.nda
 def compute_trunk_tilt(
     hip_center: np.ndarray,
     shoulder_center: np.ndarray,
-    vertical: np.ndarray = np.array([0, -1]),  # Up in screen coordinates
+    vertical: np.ndarray | None = None,
 ) -> float:
     """Compute trunk forward tilt from vertical (degrees).
 
     0° = perfectly upright, positive = forward lean.
     """
+    if vertical is None:
+        dim = hip_center.shape[-1]
+        vertical = np.array([0, -1, 0]) if dim == 3 else np.array([0, -1])
     trunk_vec = shoulder_center - hip_center
     trunk_norm = trunk_vec / (np.linalg.norm(trunk_vec) + 1e-8)
     cos_angle = np.dot(trunk_norm, vertical)
@@ -140,7 +143,8 @@ def compute_arm_slot(
     Measured from horizontal: 0° = sidearm, 90° = overhand.
     """
     arm_vec = release_point - shoulder
-    horizontal = np.array([1, 0])
+    dim = shoulder.shape[-1]
+    horizontal = np.array([1, 0, 0]) if dim == 3 else np.array([1, 0])
     cos_angle = np.dot(arm_vec / (np.linalg.norm(arm_vec) + 1e-8), horizontal)
     angle_from_horiz = np.degrees(np.arccos(np.clip(abs(cos_angle), 0, 1)))
     return float(angle_from_horiz)
@@ -164,16 +168,17 @@ def extract_metrics(
     events: DeliveryEvents,
     pitcher_throws: str = "R",
     camera_view: str = "side",
+    use_3d: bool = False,
 ) -> PitcherMetrics:
     """Extract all available biomechanical metrics from keypoints at detected events.
 
     Args:
-        keypoints: Dict mapping joint names to (N_frames, 2) arrays of (x, y) positions.
-                   Expected keys: {side}_shoulder, {side}_elbow, {side}_wrist,
-                   {side}_hip, {side}_knee, {side}_ankle for both sides.
+        keypoints: Dict mapping joint names to (N_frames, D) arrays.
+                   D=2 for (x, y) or D=3 for (x, y, z).
         events: Detected delivery events with frame indices.
         pitcher_throws: "R" or "L".
         camera_view: "side" or "behind".
+        use_3d: If True, compute additional 3D-specific metrics.
 
     Returns:
         PitcherMetrics with all computable metrics filled in.
@@ -249,5 +254,61 @@ def extract_metrics(
         lead_ankle_pt = at(f"{lead_side}_ankle", br)
         if all(p is not None for p in [lead_hip_pt, lead_knee_pt, lead_ankle_pt]):
             metrics.lead_knee_angle_br = angle_between_points(lead_hip_pt, lead_knee_pt, lead_ankle_pt)
+
+    # --- 3D-specific metrics ---
+    if use_3d and events.foot_plant is not None:
+        from src.biomechanics.angles_3d import (
+            compute_hip_shoulder_separation_3d,
+            compute_shoulder_abduction_3d,
+            compute_shoulder_horizontal_abduction_3d,
+            compute_torso_lateral_tilt_3d,
+        )
+
+        fp = events.foot_plant
+        throw_side = "right" if pitcher_throws == "R" else "left"
+        lead_side = "left" if pitcher_throws == "R" else "right"
+
+        l_hip = at("left_hip", fp)
+        r_hip = at("right_hip", fp)
+        l_sho = at("left_shoulder", fp)
+        r_sho = at("right_shoulder", fp)
+
+        if all(p is not None for p in [l_hip, r_hip, l_sho, r_sho]):
+            metrics.hip_shoulder_separation_fp = compute_hip_shoulder_separation_3d(
+                l_hip, r_hip, l_sho, r_sho
+            )
+            hip_center = (l_hip + r_hip) / 2
+            shoulder_center = (l_sho + r_sho) / 2
+            metrics.torso_lateral_tilt_fp = compute_torso_lateral_tilt_3d(
+                hip_center, shoulder_center, l_sho, r_sho
+            )
+
+        shoulder = at(f"{throw_side}_shoulder", fp)
+        elbow = at(f"{throw_side}_elbow", fp)
+        if all(p is not None for p in [shoulder, elbow, l_hip, r_hip, l_sho, r_sho]):
+            hip_center = (l_hip + r_hip) / 2
+            shoulder_center = (l_sho + r_sho) / 2
+            metrics.shoulder_abduction_fp = compute_shoulder_abduction_3d(
+                shoulder, elbow, hip_center, shoulder_center
+            )
+            metrics.shoulder_horizontal_abduction_fp = compute_shoulder_horizontal_abduction_3d(
+                shoulder, elbow, l_sho, r_sho
+            )
+
+    # --- 3D-specific: torso lateral tilt at ball release ---
+    if use_3d and events.ball_release is not None:
+        from src.biomechanics.angles_3d import compute_torso_lateral_tilt_3d
+
+        br = events.ball_release
+        l_hip = at("left_hip", br)
+        r_hip = at("right_hip", br)
+        l_sho = at("left_shoulder", br)
+        r_sho = at("right_shoulder", br)
+        if all(p is not None for p in [l_hip, r_hip, l_sho, r_sho]):
+            hip_center = (l_hip + r_hip) / 2
+            shoulder_center = (l_sho + r_sho) / 2
+            metrics.torso_lateral_tilt_br = compute_torso_lateral_tilt_3d(
+                hip_center, shoulder_center, l_sho, r_sho
+            )
 
     return metrics
