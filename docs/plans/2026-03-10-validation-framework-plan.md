@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Save Pipeline Results as JSON
+### Task 1: Save Pipeline Results as JSON ✅
 
 The evaluation scripts need machine-readable pipeline output. Currently only HTML is saved.
 
@@ -76,7 +76,7 @@ git commit -m "Save pipeline results as JSON for evaluation scripts"
 
 ---
 
-### Task 2: Frame Reviewer HTML Generator
+### Task 2: Frame Reviewer HTML Generator ✅
 
 **Files:**
 - Create: `scripts/label_events.py`
@@ -328,7 +328,7 @@ git commit -m "Add frame reviewer for ground truth event labeling"
 
 ---
 
-### Task 3: Pitcher Registry and Ground Truth Data Structure
+### Task 3: Pitcher Registry and Ground Truth Data Structure ✅
 
 **Files:**
 - Create: `data/ground_truth/pitchers.json`
@@ -359,7 +359,7 @@ git commit -m "Add pitcher registry for ground truth evaluation"
 
 ---
 
-### Task 4: Failure Mode Detection Module
+### Task 4: Failure Mode Detection Module ✅
 
 **Files:**
 - Create: `src/biomechanics/validation.py`
@@ -601,7 +601,7 @@ git commit -m "Add pipeline validation module with sanity checks"
 
 ---
 
-### Task 5: Integrate Validation Into Pipeline
+### Task 5: Integrate Validation Into Pipeline ✅
 
 **Files:**
 - Modify: `scripts/validate_pose.py`
@@ -658,7 +658,7 @@ git commit -m "Integrate validation warnings into pipeline output"
 
 ---
 
-### Task 6: Event Detection Accuracy Scorer
+### Task 6: Event Detection Accuracy Scorer ✅
 
 **Files:**
 - Create: `scripts/eval_events.py`
@@ -795,7 +795,7 @@ git commit -m "Add event detection accuracy evaluation script"
 
 ---
 
-### Task 7: Cross-Pitch Consistency Scorer
+### Task 7: Cross-Pitch Consistency Scorer ✅
 
 **Files:**
 - Create: `scripts/eval_consistency.py`
@@ -897,7 +897,7 @@ git commit -m "Add cross-pitch consistency evaluation script"
 
 ---
 
-### Task 8: Re-run Pipeline on All 4 Clips (Generate results.json)
+### Task 8: Re-run Pipeline on All 4 Clips (Generate results.json) ✅
 
 After Task 1 adds JSON export, re-run the pipeline on all 4 driveway clips so results.json files exist for the evaluation scripts.
 
