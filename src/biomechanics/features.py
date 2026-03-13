@@ -267,7 +267,7 @@ def extract_metrics(
                 sep = compute_hip_shoulder_separation(lh, rh, ls, rs)
                 if sep > max_sep:
                     max_sep = sep
-        if max_sep > 0:
+        if max_sep is not None:
             metrics.max_hip_shoulder_separation = max_sep
 
     # --- Max arm speed (peak wrist velocity) ---
@@ -275,7 +275,12 @@ def extract_metrics(
     if wrist_key in keypoints and len(keypoints[wrist_key]) > 1:
         wrist_positions = keypoints[wrist_key]
         wrist_velo = np.linalg.norm(np.diff(wrist_positions, axis=0), axis=1)
-        metrics.max_arm_speed = float(np.max(wrist_velo))
+        try:
+            max_speed = float(np.nanmax(wrist_velo))
+            if not np.isnan(max_speed):
+                metrics.max_arm_speed = max_speed
+        except (ValueError, RuntimeWarning):
+            pass  # All NaN — leave as None
 
     # --- Peak values ---
     if events.max_external_rotation is not None:
