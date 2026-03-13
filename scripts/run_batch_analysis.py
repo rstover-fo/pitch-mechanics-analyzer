@@ -48,6 +48,7 @@ def save_results(db: Database, pitch_id: int, result) -> None:
         report_html=result.report_html,
         coaching_report=result.coaching_report,
         output_dir=str(result.output_dir) if result.output_dir else "",
+        parent_report_html=getattr(result, "parent_report_html", "") or "",
     )
 
     # Save diagnostics
