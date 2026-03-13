@@ -107,6 +107,10 @@ def main() -> None:
         help="Don't auto-open the report in a browser",
     )
     parser.add_argument(
+        "--no-3d", action="store_true",
+        help="Force 2D-only mode (skip MotionBERT 3D lifting)",
+    )
+    parser.add_argument(
         "--age", type=int, default=None,
         help="Pitcher age in years (requires --height and --weight)",
     )
@@ -466,14 +470,37 @@ def main() -> None:
         print(f"  Captured: {event_label} at frame {actual_frame_idx}")
 
     # =========================================================================
+    # Stage 4.5: 3D Pose Lifting (metrics only — events use 2D pixel coords)
+    # =========================================================================
+    pose_mode = "2d"
+    keypoints_3d: dict[str, np.ndarray] = {}
+    if not args.no_3d:
+        from src.pose.lifter import is_3d_available, load_motionbert, lift_to_3d, CHECKPOINT_PATH
+        if is_3d_available():
+            print("\n" + "=" * 60)
+            print("Stage 4.5: 3D Pose Lifting (MotionBERT-Lite)")
+            print("=" * 60)
+            model = load_motionbert(CHECKPOINT_PATH)
+            keypoints_3d = lift_to_3d(pose_seq, model)
+            if keypoints_3d:
+                pose_mode = "3d"
+                print(f"  3D lifting: {len(keypoints_3d)} joints, {len(next(iter(keypoints_3d.values())))} frames")
+            else:
+                print("  3D lifting failed — falling back to 2D")
+        else:
+            print("\n  (MotionBERT checkpoint not found — using 2D only)")
+
+    # =========================================================================
     # Stage 4: Metrics Extraction
     # =========================================================================
     print("\n" + "=" * 60)
-    print("Stage 4: Metrics Extraction")
+    print(f"Stage 4: Metrics Extraction ({pose_mode.upper()} mode)")
     print("=" * 60)
 
     keypoints_dict = pose_seq.to_keypoints_dict()
-    metrics = extract_metrics(keypoints_dict, events, pitcher_throws=args.throws)
+    # Use 3D keypoints for metrics if available, 2D otherwise
+    metrics_kpts = keypoints_3d if keypoints_3d else keypoints_dict
+    metrics = extract_metrics(metrics_kpts, events, pitcher_throws=args.throws, use_3d=bool(keypoints_3d))
     obp_dict = metrics.to_obp_comparison_dict()
 
     # Build metrics display rows
@@ -626,6 +653,11 @@ def main() -> None:
             f"Stride length: {metrics.stride_length_pct_height:.0f}% of height "
             "(ASMI target: 75-85%)"
         )
+    if pose_mode == "3d":
+        additional_lines.append(
+            "Metrics computed from 3D pose lifting (MotionBERT-Lite). "
+            "Angular measurements are true 3D values, not 2D projections."
+        )
     additional_context = "\n".join(additional_lines) if additional_lines else None
 
     # Append measurement caveats from prompt file
@@ -694,6 +726,7 @@ def main() -> None:
         "video": args.video.name,
         "backend": args.backend,
         "pitcher_throws": args.throws,
+        "pose_mode": pose_mode,
         "fps": fps,
         "total_frames": video_info.total_frames,
         "events": {
