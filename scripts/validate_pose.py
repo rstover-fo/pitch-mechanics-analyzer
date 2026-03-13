@@ -44,7 +44,14 @@ def main() -> None:
 
     roi = None
     if args.roi:
-        roi = tuple(int(v) for v in args.roi.split(","))
+        parts = args.roi.split(",")
+        if len(parts) != 4:
+            parser.error("--roi requires exactly 4 values: x,y,width,height")
+        try:
+            x, y, w, h = [int(v) for v in parts]
+        except ValueError:
+            parser.error("--roi values must be integers")
+        roi = (x, y, x + w, y + h)
 
     config = PipelineConfig(
         backend=args.backend,
