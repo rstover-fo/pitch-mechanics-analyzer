@@ -1,7 +1,7 @@
 """Seed the database with baseline player profiles and sessions.
 
 Reads ground truth data from data/ground_truth/ and creates:
-- 2 players (Jack Stover, Player B)
+- 2 players (Jack Stover, Hank Stover)
 - 1 session per player
 - 2 pitches per session (one per video clip)
 - pitch_events from hand-labeled ground truth
@@ -81,7 +81,7 @@ def seed(db: Database) -> None:
         },
         {
             "key": "player_b",
-            "name": "Player B",
+            "name": "Hank Stover",
             "notes": pitchers["player_b"]["description"],
             "throws": pitchers["player_b"]["throws"],
             "clips": pitchers["player_b"]["clips"],
@@ -106,7 +106,7 @@ def seed(db: Database) -> None:
         player_id = db.add_player(player)
         print(f"Created player: {pdef['name']} (id={player_id})")
 
-        # Create physical snapshot for Jack Stover
+        # Create physical snapshot
         snapshot_id = None
         if pdef["key"] == "player_a":
             snapshot = PhysicalSnapshot(
@@ -118,7 +118,18 @@ def seed(db: Database) -> None:
                 notes="Initial baseline",
             )
             snapshot_id = db.add_physical_snapshot(snapshot)
-            print(f"  Physical snapshot id={snapshot_id} (age=10, 4'10\", ~70 lbs)")
+            print(f"  Physical snapshot id={snapshot_id} (age=10, 4'10\", 90 lbs)")
+        elif pdef["key"] == "player_b":
+            snapshot = PhysicalSnapshot(
+                player_id=player_id,
+                measured_date=today,
+                age_years=12,
+                height_inches=59.5,     # 4'11.5"
+                weight_lbs=78,
+                notes="Initial baseline",
+            )
+            snapshot_id = db.add_physical_snapshot(snapshot)
+            print(f"  Physical snapshot id={snapshot_id} (age=12, 4'11.5\", 78 lbs)")
 
         # Create session
         session = Session(
