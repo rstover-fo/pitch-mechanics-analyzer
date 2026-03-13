@@ -1,5 +1,6 @@
 """Report Viewer tab: displays self-contained HTML reports."""
 
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -66,7 +67,14 @@ class ReportViewer(QWidget):
             self.show_placeholder("No report available for this pitch")
             return
         self._current_html = pitch.report_html
-        self.web_view.setHtml(self._current_html)
+        # Write to temp file and load via URL to avoid QWebEngineView's
+        # ~2MB setHtml() limit (reports contain base64 images/charts).
+        tmp = tempfile.NamedTemporaryFile(
+            suffix=".html", delete=False, mode="w", encoding="utf-8",
+        )
+        tmp.write(self._current_html)
+        tmp.close()
+        self.web_view.load(QUrl.fromLocalFile(tmp.name))
         self.web_view.setVisible(True)
         self.placeholder.setVisible(False)
         self.export_btn.setEnabled(True)
