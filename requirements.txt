@@ -1,28 +1,16 @@
-# Core
+# Thin wrapper — canonical dependencies are in pyproject.toml.
+# Use `pip install -e .` for development, or `pip install -r requirements.txt` for quick setup.
 numpy>=1.24
 pandas>=2.0
 scipy>=1.11
 opencv-python>=4.8
-
-# Pose Estimation
-ultralytics>=8.0          # YOLOv8-pose
-mediapipe>=0.10           # Fallback pose estimation
-
-# Visualization
+ultralytics>=8.0
+mediapipe>=0.10
 plotly>=5.18
 matplotlib>=3.8
-
-# AI Coaching
 anthropic>=0.40
-
-# Web UI (Phase 2)
-streamlit>=1.30
-
-# Utilities
 pyyaml>=6.0
 python-dotenv>=1.0
 tqdm>=4.66
-
-# Development
 pytest>=7.4
 ruff>=0.1
