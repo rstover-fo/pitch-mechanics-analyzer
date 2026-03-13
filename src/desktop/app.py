@@ -82,17 +82,17 @@ class MainWindow(QMainWindow):
             self.session_list.set_player(None)
         self.report_viewer.show_placeholder()
 
-    def _on_analysis_completed(self, session_id: int):
+    def _on_analysis_completed(self, pitch_id: int):
         # Refresh the history tab
         self.session_list.refresh()
         # Auto-show the report
-        session = self.db.get_session(session_id)
-        if session and session.status == "completed":
-            self.report_viewer.load_session(session_id)
+        pitch = self.db.get_pitch(pitch_id)
+        if pitch and pitch.status == "completed":
+            self.report_viewer.load_pitch(pitch_id)
             self.tabs.setCurrentWidget(self.report_viewer)
 
-    def _on_view_report(self, session_id: int):
-        self.report_viewer.load_session(session_id)
+    def _on_view_report(self, pitch_id: int):
+        self.report_viewer.load_pitch(pitch_id)
         self.tabs.setCurrentWidget(self.report_viewer)
 
 

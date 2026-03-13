@@ -1,4 +1,4 @@
-"""Analysis History tab: table of past sessions for the selected player."""
+"""Analysis History tab: tree view of sessions → pitches for the selected player."""
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -7,20 +7,20 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMenu,
     QMessageBox,
-    QTableWidget,
-    QTableWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from src.desktop.models import AnalysisSession, Database
+from src.desktop.models import Database, Pitch, PitchMetric, Session
 
 
 _STATUS_ICONS = {
-    "completed": "\u2713 Complete",
-    "running": "\u25b6 Running",
-    "failed": "\u2717 Failed",
-    "pending": "\u2026 Pending",
+    "completed": "\u2713",
+    "running": "\u25b6",
+    "failed": "\u2717",
+    "pending": "\u2026",
 }
 
 _STATUS_COLORS = {
@@ -32,34 +32,33 @@ _STATUS_COLORS = {
 
 
 class SessionList(QWidget):
-    """Table widget showing analysis history for a player."""
+    """Tree widget showing sessions → pitches for a player."""
 
-    session_selected = pyqtSignal(int)  # session_id (for viewing report)
+    session_selected = pyqtSignal(int)  # pitch_id (for viewing report)
 
     def __init__(self, db: Database, parent=None):
         super().__init__(parent)
         self.db = db
         self._player_id: int | None = None
-        self._sessions: list[AnalysisSession] = []
         self._setup_ui()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Date", "Video", "Backend", "Model", "Status"])
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table.verticalHeader().setVisible(False)
-        self.table.doubleClicked.connect(self._on_double_click)
-        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._on_context_menu)
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(5)
+        self.tree.setHeaderLabels(["Date / Pitch #", "Type", "Location / Status", "Pitches", "Highlights"])
+        self.tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.tree.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.tree.header().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.tree.setRootIsDecorated(True)
+        self.tree.doubleClicked.connect(self._on_double_click)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_context_menu)
 
-        layout.addWidget(self.table)
+        layout.addWidget(self.tree)
 
         self.empty_label = QLabel("Select a player to view their analysis history")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -71,78 +70,119 @@ class SessionList(QWidget):
         self.refresh()
 
     def refresh(self):
+        self.tree.clear()
+
         if self._player_id is None:
-            self._sessions = []
-            self.table.setRowCount(0)
-            self.table.setVisible(False)
+            self.tree.setVisible(False)
             self.empty_label.setVisible(True)
             return
 
         self.empty_label.setVisible(False)
-        self.table.setVisible(True)
+        self.tree.setVisible(True)
 
-        self._sessions = self.db.get_sessions_for_player(self._player_id)
-        self.table.setRowCount(len(self._sessions))
+        sessions = self.db.get_sessions_for_player(self._player_id)
 
-        for row, session in enumerate(self._sessions):
-            # Date
-            date_str = session.created_at or ""
-            if date_str and len(date_str) >= 10:
-                date_str = date_str[:10]
-            date_item = QTableWidgetItem(date_str)
-            date_item.setData(Qt.ItemDataRole.UserRole, session.id)
-            self.table.setItem(row, 0, date_item)
+        for session in sessions:
+            pitches = self.db.get_pitches_for_session(session.id)
+            completed = sum(1 for p in pitches if p.status == "completed")
 
-            # Video
-            self.table.setItem(row, 1, QTableWidgetItem(session.video_filename))
+            # Session row
+            session_item = QTreeWidgetItem()
+            session_item.setText(0, session.session_date)
+            session_item.setText(1, session.session_type)
+            session_item.setText(2, session.location)
+            session_item.setText(3, f"{completed}/{len(pitches)}")
+            session_item.setData(0, Qt.ItemDataRole.UserRole, ("session", session.id))
 
-            # Backend
-            self.table.setItem(row, 2, QTableWidgetItem(session.backend))
+            # Pitch children
+            for pitch in pitches:
+                pitch_item = QTreeWidgetItem()
+                pitch_item.setText(0, f"Pitch #{pitch.pitch_number or '?'}")
+                pitch_item.setText(1, pitch.pitch_type)
 
-            # Model
-            self.table.setItem(row, 3, QTableWidgetItem(session.model_size))
+                status_icon = _STATUS_ICONS.get(pitch.status, pitch.status)
+                pitch_item.setText(2, f"{status_icon} {pitch.status.title()}")
 
-            # Status
-            status_text = _STATUS_ICONS.get(session.status, session.status)
-            status_item = QTableWidgetItem(status_text)
-            color = _STATUS_COLORS.get(session.status, "#e0e0e0")
-            status_item.setForeground(Qt.GlobalColor.white)
-            self.table.setItem(row, 4, status_item)
+                # Key metric highlight
+                if pitch.status == "completed":
+                    highlight = self._get_highlight(pitch.id)
+                    pitch_item.setText(4, highlight)
+
+                pitch_item.setData(0, Qt.ItemDataRole.UserRole, ("pitch", pitch.id))
+                session_item.addChild(pitch_item)
+
+            self.tree.addTopLevelItem(session_item)
+
+        # Expand all by default
+        self.tree.expandAll()
+
+    def _get_highlight(self, pitch_id: int) -> str:
+        """Get a short metric highlight string for a completed pitch."""
+        metrics = self.db.get_metrics_for_pitch(pitch_id)
+        # Look for peak ER percentile or a notable metric
+        for m in metrics:
+            if "external_rotation" in m.metric_name and m.obp_percentile is not None:
+                return f"Peak ER: P{m.obp_percentile:.0f}"
+        # Fallback: show any metric with a percentile
+        for m in metrics:
+            if m.obp_percentile is not None:
+                return f"{m.display_name}: P{m.obp_percentile:.0f}"
+        return ""
 
     def _on_double_click(self, index):
-        row = index.row()
-        if 0 <= row < len(self._sessions):
-            session = self._sessions[row]
-            if session.status == "completed":
-                self.session_selected.emit(session.id)
+        item = self.tree.currentItem()
+        if item is None:
+            return
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data is None:
+            return
+        kind, obj_id = data
+        if kind == "pitch":
+            # Check pitch is completed
+            pitch = self.db.get_pitch(obj_id)
+            if pitch and pitch.status == "completed":
+                self.session_selected.emit(obj_id)
 
     def _on_context_menu(self, pos):
-        index = self.table.indexAt(pos)
-        if not index.isValid():
+        item = self.tree.itemAt(pos)
+        if item is None:
             return
-        row = index.row()
-        if row < 0 or row >= len(self._sessions):
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if data is None:
             return
-
-        session = self._sessions[row]
+        kind, obj_id = data
         menu = QMenu(self)
 
-        if session.status == "completed":
-            view_action = menu.addAction("View Report")
-        else:
-            view_action = None
+        if kind == "pitch":
+            pitch = self.db.get_pitch(obj_id)
+            if pitch and pitch.status == "completed":
+                view_action = menu.addAction("View Report")
+            else:
+                view_action = None
+            delete_action = menu.addAction("Delete Pitch")
 
-        delete_action = menu.addAction("Delete Session")
+            action = menu.exec(self.tree.viewport().mapToGlobal(pos))
+            if action == view_action and view_action is not None:
+                self.session_selected.emit(obj_id)
+            elif action == delete_action:
+                reply = QMessageBox.question(
+                    self, "Delete Pitch",
+                    "Delete this pitch and its metrics?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.db.delete_pitch(obj_id)
+                    self.refresh()
 
-        action = menu.exec(self.table.viewport().mapToGlobal(pos))
-        if action == view_action and view_action is not None:
-            self.session_selected.emit(session.id)
-        elif action == delete_action:
-            reply = QMessageBox.question(
-                self, "Delete Session",
-                f"Delete this analysis session for '{session.video_filename}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.db.delete_session(session.id)
-                self.refresh()
+        elif kind == "session":
+            delete_action = menu.addAction("Delete Session")
+            action = menu.exec(self.tree.viewport().mapToGlobal(pos))
+            if action == delete_action:
+                reply = QMessageBox.question(
+                    self, "Delete Session",
+                    "Delete this session and all its pitches?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.db.delete_session(obj_id)
+                    self.refresh()
