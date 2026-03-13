@@ -1,7 +1,7 @@
 """Seed the database with baseline player profiles and sessions.
 
 Reads ground truth data from data/ground_truth/ and creates:
-- 2 players (Player A, Player B)
+- 2 players (Jack Stover, Player B)
 - 1 session per player
 - 2 pitches per session (one per video clip)
 - pitch_events from hand-labeled ground truth
@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.desktop.models import (
     Database,
+    PhysicalSnapshot,
     Pitch,
     PitchEvent,
     Player,
@@ -73,7 +74,7 @@ def seed(db: Database) -> None:
     player_defs = [
         {
             "key": "player_a",
-            "name": "Player A",
+            "name": "Jack Stover",
             "notes": pitchers["player_a"]["description"],
             "throws": pitchers["player_a"]["throws"],
             "clips": pitchers["player_a"]["clips"],
@@ -105,6 +106,20 @@ def seed(db: Database) -> None:
         player_id = db.add_player(player)
         print(f"Created player: {pdef['name']} (id={player_id})")
 
+        # Create physical snapshot for Jack Stover
+        snapshot_id = None
+        if pdef["key"] == "player_a":
+            snapshot = PhysicalSnapshot(
+                player_id=player_id,
+                measured_date=today,
+                age_years=10,
+                height_inches=58,       # 4'10"
+                weight_lbs=70,          # Estimated for a 10-year-old at 4'10"; update when measured
+                notes="Initial baseline",
+            )
+            snapshot_id = db.add_physical_snapshot(snapshot)
+            print(f"  Physical snapshot id={snapshot_id} (age=10, 4'10\", ~70 lbs)")
+
         # Create session
         session = Session(
             player_id=player_id,
@@ -112,6 +127,7 @@ def seed(db: Database) -> None:
             session_type="bullpen",
             location="Driveway",
             notes="Initial baseline session",
+            physical_snapshot_id=snapshot_id,
         )
         session_id = db.add_session(session)
         print(f"  Session id={session_id} ({today}, bullpen)")
