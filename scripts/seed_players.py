@@ -114,7 +114,7 @@ def seed(db: Database) -> None:
                 measured_date=today,
                 age_years=10,
                 height_inches=58,       # 4'10"
-                weight_lbs=70,          # Estimated for a 10-year-old at 4'10"; update when measured
+                weight_lbs=90,
                 notes="Initial baseline",
             )
             snapshot_id = db.add_physical_snapshot(snapshot)
