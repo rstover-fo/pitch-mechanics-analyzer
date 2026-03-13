@@ -59,13 +59,13 @@ class ReportViewer(QWidget):
 
         self.web_view.setVisible(False)
 
-    def load_session(self, session_id: int):
-        """Load and display the report for a given session."""
-        session = self.db.get_session(session_id)
-        if session is None or not session.report_html:
-            self.show_placeholder("No report available for this session")
+    def load_pitch(self, pitch_id: int):
+        """Load and display the report for a given pitch."""
+        pitch = self.db.get_pitch(pitch_id)
+        if pitch is None or not pitch.report_html:
+            self.show_placeholder("No report available for this pitch")
             return
-        self._current_html = session.report_html
+        self._current_html = pitch.report_html
         self.web_view.setHtml(self._current_html)
         self.web_view.setVisible(True)
         self.placeholder.setVisible(False)
