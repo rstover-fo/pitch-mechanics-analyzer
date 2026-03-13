@@ -49,7 +49,9 @@ class PitcherMetrics:
 
     # At foot plant
     elbow_flexion_fp: Optional[float] = None
+    # Requires 3D motion capture — not extractable from single-camera 2D video
     shoulder_abduction_fp: Optional[float] = None
+    # Requires 3D motion capture — not extractable from single-camera 2D video
     shoulder_horizontal_abduction_fp: Optional[float] = None
     torso_anterior_tilt_fp: Optional[float] = None
     torso_lateral_tilt_fp: Optional[float] = None
@@ -70,6 +72,8 @@ class PitcherMetrics:
     stride_length_pct_height: Optional[float] = None
 
     # Velocities (approximate from frame-to-frame changes)
+    # Requires 3D motion capture — trunk rotation velocity around the vertical
+    # axis cannot be reliably measured from 2D projection
     max_trunk_rotation_velo: Optional[float] = None
     max_arm_speed: Optional[float] = None
 
@@ -163,6 +167,30 @@ def compute_stride_length(
     return float(stride_px / body_height_pixels * 100)
 
 
+def compute_hip_shoulder_separation(
+    left_hip: np.ndarray,
+    right_hip: np.ndarray,
+    left_shoulder: np.ndarray,
+    right_shoulder: np.ndarray,
+) -> float:
+    """Compute hip-shoulder separation angle (degrees).
+
+    Measures the angle between the hip line (left_hip → right_hip) and
+    the shoulder line (left_shoulder → right_shoulder) projected onto
+    the frontal plane.  This IS feasible from a 2D front-quarter view,
+    though accuracy depends on camera angle.
+
+    Returns:
+        Separation angle in degrees (0 = aligned, higher = more separation).
+    """
+    hip_vec = right_hip - left_hip
+    shoulder_vec = right_shoulder - left_shoulder
+    cos_angle = np.dot(hip_vec, shoulder_vec) / (
+        np.linalg.norm(hip_vec) * np.linalg.norm(shoulder_vec) + 1e-8
+    )
+    return float(np.degrees(np.arccos(np.clip(cos_angle, -1, 1))))
+
+
 def extract_metrics(
     keypoints: dict[str, np.ndarray],
     events: DeliveryEvents,
@@ -220,6 +248,44 @@ def extract_metrics(
         lead_ankle_pt = at(f"{lead_side}_ankle", fp)
         if all(p is not None for p in [lead_hip_pt, lead_knee_pt, lead_ankle_pt]):
             metrics.lead_knee_angle_fp = angle_between_points(lead_hip_pt, lead_knee_pt, lead_ankle_pt)
+
+        # Hip-shoulder separation at foot plant
+        if all(p is not None for p in [throw_hip, lead_hip, throw_shoulder, lead_shoulder]):
+            metrics.hip_shoulder_separation_fp = compute_hip_shoulder_separation(
+                at(f"left_hip", fp), at(f"right_hip", fp),
+                at(f"left_shoulder", fp), at(f"right_shoulder", fp),
+            )
+
+    # --- Max hip-shoulder separation (scan leg_lift → ball_release) ---
+    scan_start = events.leg_lift_apex if events.leg_lift_apex is not None else 0
+    scan_end = events.ball_release if events.ball_release is not None else (
+        events.max_external_rotation if events.max_external_rotation is not None else None
+    )
+    if scan_end is not None:
+        max_sep = 0.0
+        for f in range(scan_start, scan_end + 1):
+            lh = at("left_hip", f)
+            rh = at("right_hip", f)
+            ls = at("left_shoulder", f)
+            rs = at("right_shoulder", f)
+            if all(p is not None for p in [lh, rh, ls, rs]):
+                sep = compute_hip_shoulder_separation(lh, rh, ls, rs)
+                if sep > max_sep:
+                    max_sep = sep
+        if max_sep is not None:
+            metrics.max_hip_shoulder_separation = max_sep
+
+    # --- Max arm speed (peak wrist velocity) ---
+    wrist_key = f"{throw_side}_wrist"
+    if wrist_key in keypoints and len(keypoints[wrist_key]) > 1:
+        wrist_positions = keypoints[wrist_key]
+        wrist_velo = np.linalg.norm(np.diff(wrist_positions, axis=0), axis=1)
+        try:
+            max_speed = float(np.nanmax(wrist_velo))
+            if not np.isnan(max_speed):
+                metrics.max_arm_speed = max_speed
+        except (ValueError, RuntimeWarning):
+            pass  # All NaN — leave as None
 
     # --- Peak values ---
     if events.max_external_rotation is not None:
