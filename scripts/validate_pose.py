@@ -25,7 +25,8 @@ def main() -> None:
     parser.add_argument("--model-size", type=str, default="m", choices=["n", "s", "m", "l", "x"])
     parser.add_argument("--confidence", type=float, default=0.3)
     parser.add_argument("--output-dir", type=str, default=None)
-    parser.add_argument("--roi", type=str, default=None, help="x,y,w,h crop region")
+    parser.add_argument("--roi", type=str, default=None,
+                        help="x,y,width,height (pixel coordinates of the pitcher's bounding region)")
     parser.add_argument("--no-open", action="store_true", help="Don't open report in browser")
     parser.add_argument("--age", type=int, default=None, help="Pitcher age (youth mode)")
     parser.add_argument("--height", type=float, default=None, help="Height in inches (youth mode)")
@@ -44,7 +45,8 @@ def main() -> None:
 
     roi = None
     if args.roi:
-        roi = tuple(int(v) for v in args.roi.split(","))
+        x, y, w, h = (int(v) for v in args.roi.split(","))
+        roi = (x, y, x + w, y + h)  # Convert x,y,w,h to x1,y1,x2,y2 for estimator
 
     config = PipelineConfig(
         backend=args.backend,

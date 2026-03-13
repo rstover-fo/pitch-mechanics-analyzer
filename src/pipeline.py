@@ -175,6 +175,48 @@ class PitchAnalysisPipeline:
         events = self.detect_events(pose_seq)
         cb("event_detection", 1.0)
 
+        # Handle empty pose sequences: skip downstream stages, generate minimal report
+        if len(pose_seq.frames) == 0:
+            validation_warnings = [{"severity": "error", "message": "No poses detected in video"}]
+            metrics = PitcherMetrics()
+            metrics_rows = self._build_metrics_rows(metrics, [])
+            diagnostics = {
+                "frames_processed": video_info.total_frames,
+                "frames_with_poses": 0,
+                "avg_confidence": "0.000",
+                "events_detected": "0 / 4",
+                "metrics_computed": f"0 / {len(metrics_rows)}",
+                "warnings": "; ".join(w["message"] for w in validation_warnings),
+            }
+            report_html = ""
+            if cfg.generate_report:
+                report_html = build_report_html(
+                    video_filename=video_path.name,
+                    video_rel_path="annotated_video.mp4" if cfg.generate_video else None,
+                    fps=video_info.fps,
+                    frame_count=video_info.total_frames,
+                    backend=cfg.backend,
+                    pitcher_throws=cfg.throws,
+                    trajectory_plots_html=[],
+                    key_frame_images={},
+                    metrics_rows=metrics_rows,
+                    diagnostics=diagnostics,
+                )
+                report_path = output_dir / "report.html"
+                report_path.write_text(report_html)
+            cb("report_generation", 1.0)
+
+            return PipelineResult(
+                pose_sequence=pose_seq,
+                events=events,
+                metrics=metrics,
+                benchmark_comparisons=[],
+                coaching_report="",
+                report_html=report_html,
+                output_dir=output_dir,
+                validation_warnings=validation_warnings,
+            )
+
         # Stage 3: Key frame extraction
         event_names = {
             "Leg Lift": events.leg_lift_apex,
@@ -258,9 +300,10 @@ class PitchAnalysisPipeline:
                     else "none"
                 ),
             }
+            video_rel = "annotated_video.mp4" if cfg.generate_video else None
             report_html = build_report_html(
                 video_filename=video_path.name,
-                video_rel_path="annotated_video.mp4",
+                video_rel_path=video_rel,
                 fps=video_info.fps,
                 frame_count=video_info.total_frames,
                 backend=cfg.backend,
@@ -310,6 +353,10 @@ class PitchAnalysisPipeline:
         """Stage 2: Detect delivery events using anchor-based approach."""
         cfg = self.config
         fps = pose_seq.video_info.fps
+
+        if len(pose_seq.frames) == 0:
+            return DeliveryEvents(fps=fps)
+
         lead_side = "left" if cfg.throws == "R" else "right"
         throw_side = "right" if cfg.throws == "R" else "left"
 
