@@ -20,6 +20,7 @@ data/obp/*.c3d
 data/obp/*.zip
 data/uploads/
 data/outputs/
+data/*.db
 
 # Environment
 .env
