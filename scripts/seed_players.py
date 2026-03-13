@@ -117,7 +117,7 @@ def seed(db: Database) -> None:
                 weight_lbs=90,
                 notes="Initial baseline",
             )
-            snapshot_id = db.add_physical_snapshot(snapshot)
+            snapshot_id = db.add_snapshot(snapshot)
             print(f"  Physical snapshot id={snapshot_id} (age=10, 4'10\", 90 lbs)")
         elif pdef["key"] == "player_b":
             snapshot = PhysicalSnapshot(
@@ -128,7 +128,7 @@ def seed(db: Database) -> None:
                 weight_lbs=78,
                 notes="Initial baseline",
             )
-            snapshot_id = db.add_physical_snapshot(snapshot)
+            snapshot_id = db.add_snapshot(snapshot)
             print(f"  Physical snapshot id={snapshot_id} (age=12, 4'11.5\", 78 lbs)")
 
         # Create session
