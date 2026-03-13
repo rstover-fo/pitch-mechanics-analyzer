@@ -190,6 +190,48 @@ class TestSnapshotCRUD:
         db.delete_player(player.id)
         assert db.get_snapshot(snapshot.id) is None
 
+    def test_delete_snapshot_nulls_session_fk(self, db, player, snapshot, session):
+        """Deleting a snapshot sets physical_snapshot_id to NULL on linked sessions."""
+        assert session.physical_snapshot_id == snapshot.id
+        db.delete_snapshot(snapshot.id)
+        # Snapshot is gone
+        assert db.get_snapshot(snapshot.id) is None
+        # Session still exists with nulled FK
+        reloaded = db.get_session(session.id)
+        assert reloaded is not None
+        assert reloaded.physical_snapshot_id is None
+
+    def test_update_snapshot_by_date(self, db, player, snapshot):
+        """update_snapshot_by_date updates the row matching (player_id, measured_date)."""
+        updated = PhysicalSnapshot(
+            player_id=player.id,
+            measured_date=snapshot.measured_date,
+            age_years=15.0,
+            height_inches=70.0,
+            weight_lbs=155.0,
+            arm_length_inches=30.0,
+            notes="updated",
+        )
+        db.update_snapshot_by_date(updated)
+        reloaded = db.get_snapshot(snapshot.id)
+        assert reloaded.age_years == 15.0
+        assert reloaded.height_inches == 70.0
+        assert reloaded.weight_lbs == 155.0
+        assert reloaded.arm_length_inches == 30.0
+        assert reloaded.notes == "updated"
+
+    def test_duplicate_snapshot_raises_integrity_error(self, db, player, snapshot):
+        """Inserting a second snapshot for the same player/date raises IntegrityError."""
+        dup = PhysicalSnapshot(
+            player_id=player.id,
+            measured_date=snapshot.measured_date,
+            age_years=15.0,
+            height_inches=70.0,
+            weight_lbs=155.0,
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            db.add_snapshot(dup)
+
 
 # ---------------------------------------------------------------------------
 # Session CRUD

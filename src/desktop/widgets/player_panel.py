@@ -1,5 +1,6 @@
 """Left sidebar: player list, profile editor, and physical measurements management."""
 
+import sqlite3
 from datetime import date
 
 from PyQt6.QtCore import QDate, Qt, pyqtSignal
@@ -331,7 +332,18 @@ class PlayerPanel(QWidget):
         if snap.age_years <= 0 or snap.height_inches <= 0 or snap.weight_lbs <= 0:
             QMessageBox.warning(self, "Invalid", "Age, height, and weight are required.")
             return
-        self.db.add_snapshot(snap)
+        try:
+            self.db.add_snapshot(snap)
+        except sqlite3.IntegrityError:
+            reply = QMessageBox.question(
+                self, "Measurement Exists",
+                f"A measurement for {snap.measured_date} already exists. Update it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.db.update_snapshot_by_date(snap)
+            else:
+                return
         self._refresh_snapshots()
 
     def _on_snap_context_menu(self, pos):

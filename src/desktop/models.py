@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     session_type TEXT DEFAULT 'bullpen'
         CHECK (session_type IN ('bullpen', 'game', 'lesson', 'warmup', 'other')),
     notes TEXT DEFAULT '',
-    physical_snapshot_id INTEGER REFERENCES physical_snapshots(id),
+    physical_snapshot_id INTEGER REFERENCES physical_snapshots(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_player_date
@@ -448,6 +448,18 @@ class Database:
                weight_lbs=?, arm_length_inches=?, notes=? WHERE id=?""",
             (snap.measured_date, snap.age_years, snap.height_inches,
              snap.weight_lbs, snap.arm_length_inches, snap.notes, snap.id),
+        )
+        self.conn.commit()
+
+    def update_snapshot_by_date(self, snap: PhysicalSnapshot) -> None:
+        """Update an existing snapshot matching (player_id, measured_date)."""
+        self.conn.execute(
+            """UPDATE physical_snapshots SET age_years=?, height_inches=?,
+               weight_lbs=?, arm_length_inches=?, notes=?
+               WHERE player_id=? AND measured_date=?""",
+            (snap.age_years, snap.height_inches, snap.weight_lbs,
+             snap.arm_length_inches, snap.notes,
+             snap.player_id, snap.measured_date),
         )
         self.conn.commit()
 
