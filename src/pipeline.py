@@ -70,6 +70,8 @@ class PipelineConfig:
     throws: str = "R"
     camera_view: str = "auto"
     roi: Optional[tuple[int, int, int, int]] = None
+    # 3D lifting
+    no_3d: bool = False
     # Youth mode
     age: Optional[int] = None
     height_inches: Optional[float] = None
@@ -89,6 +91,7 @@ class PipelineResult:
     metrics: PitcherMetrics
     benchmark_comparisons: list = field(default_factory=list)
     youth_comparisons: Optional[list] = None
+    pose_mode: str = "2d"
     coaching_report: str = ""
     report_html: str = ""
     output_dir: Optional[Path] = None
@@ -233,9 +236,22 @@ class PitchAnalysisPipeline:
             pose_seq, events, lead_side, throw_side,
         )
 
+        # Stage 3.5: 3D pose lifting (metrics only — events use 2D pixel coords)
+        pose_mode = "2d"
+        keypoints_3d: dict[str, np.ndarray] = {}
+        if not cfg.no_3d:
+            from src.pose.lifter import is_3d_available, load_motionbert, lift_to_3d, CHECKPOINT_PATH
+            if is_3d_available():
+                cb("3d_lifting", 0.0)
+                model = load_motionbert(CHECKPOINT_PATH)
+                keypoints_3d = lift_to_3d(pose_seq, model)
+                if keypoints_3d:
+                    pose_mode = "3d"
+                cb("3d_lifting", 1.0)
+
         # Stage 4: Feature extraction
         cb("feature_extraction", 0.0)
-        metrics = self.extract_metrics(pose_seq, events)
+        metrics = self.extract_metrics(pose_seq, events, keypoints_3d=keypoints_3d)
         cb("feature_extraction", 1.0)
 
         # Stage 5: Benchmark comparison
@@ -258,6 +274,7 @@ class PitchAnalysisPipeline:
         cb("coaching", 0.0)
         coaching_text = self._generate_coaching(
             metrics, obp_comparisons, youth_comparisons, youth_context,
+            pose_mode=pose_mode,
         )
         cb("coaching", 1.0)
 
@@ -279,7 +296,7 @@ class PitchAnalysisPipeline:
             output_dir, video_path, video_info, events, event_names,
             metrics, metrics_rows, pose_seq, avg_confidence,
             validation_warnings, obp_comparisons, coaching_text,
-            youth_profile_dict,
+            youth_profile_dict, pose_mode=pose_mode,
         )
 
         # Stage 7: HTML report
@@ -326,6 +343,7 @@ class PitchAnalysisPipeline:
             metrics=metrics,
             benchmark_comparisons=obp_comparisons,
             youth_comparisons=youth_comparisons,
+            pose_mode=pose_mode,
             coaching_report=coaching_text,
             report_html=report_html,
             output_dir=output_dir,
@@ -425,14 +443,20 @@ class PitchAnalysisPipeline:
         return events
 
     def extract_metrics(
-        self, pose_seq: PoseSequence, events: DeliveryEvents,
+        self,
+        pose_seq: PoseSequence,
+        events: DeliveryEvents,
+        keypoints_3d: Optional[dict] = None,
     ) -> PitcherMetrics:
         """Stage 4: Extract biomechanical metrics."""
         keypoints_dict = pose_seq.to_keypoints_dict()
+        # Use 3D keypoints for metrics if available, 2D otherwise
+        metrics_kpts = keypoints_3d if keypoints_3d else keypoints_dict
         return extract_metrics(
-            keypoints_dict, events,
+            metrics_kpts, events,
             pitcher_throws=self.config.throws,
             camera_view=self.config.camera_view,
+            use_3d=bool(keypoints_3d),
         )
 
     def compare_benchmarks(self, metrics: PitcherMetrics) -> list[dict]:
@@ -691,9 +715,10 @@ class PitchAnalysisPipeline:
         obp_comparisons: list[dict],
         youth_comparisons: Optional[list],
         youth_context: Optional[dict],
+        pose_mode: str = "2d",
     ) -> str:
         """Generate coaching report (API or offline fallback)."""
-        additional_context = self._build_additional_context(metrics)
+        additional_context = self._build_additional_context(metrics, pose_mode=pose_mode)
         api_key = os.getenv("ANTHROPIC_API_KEY")
 
         if youth_comparisons and youth_context:
@@ -719,7 +744,7 @@ class PitchAnalysisPipeline:
 
         return ""
 
-    def _build_additional_context(self, metrics: PitcherMetrics) -> Optional[str]:
+    def _build_additional_context(self, metrics: PitcherMetrics, pose_mode: str = "2d") -> Optional[str]:
         """Build additional context string for coaching prompts."""
         lines: list[str] = []
         if metrics.arm_slot_angle is not None:
@@ -735,6 +760,11 @@ class PitchAnalysisPipeline:
             lines.append(
                 f"Stride length: {metrics.stride_length_pct_height:.0f}% of height "
                 "(ASMI target: 75-85%)"
+            )
+        if pose_mode == "3d":
+            lines.append(
+                "Metrics computed from 3D pose lifting (MotionBERT-Lite). "
+                "Angular measurements are true 3D values, not 2D projections."
             )
         additional = "\n".join(lines) if lines else None
 
@@ -814,12 +844,14 @@ class PitchAnalysisPipeline:
         obp_comparisons: list[dict],
         coaching_text: str,
         youth_profile_dict: Optional[dict],
+        pose_mode: str = "2d",
     ) -> None:
         """Save pipeline results as JSON."""
         pipeline_output = {
             "video": video_path.name,
             "backend": self.config.backend,
             "pitcher_throws": self.config.throws,
+            "pose_mode": pose_mode,
             "fps": video_info.fps,
             "total_frames": video_info.total_frames,
             "events": {

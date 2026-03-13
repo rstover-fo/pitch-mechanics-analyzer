@@ -5,6 +5,7 @@ Usage:
     python scripts/validate_pose.py --video path/to/clip.mp4
     python scripts/validate_pose.py --video path/to/clip.mp4 --throws L --backend mediapipe
     python scripts/validate_pose.py --video path/to/clip.mp4 --age 12 --height 60 --weight 95
+    python scripts/validate_pose.py --video path/to/clip.mp4 --no-3d
 """
 
 import argparse
@@ -28,6 +29,8 @@ def main() -> None:
     parser.add_argument("--roi", type=str, default=None,
                         help="x,y,width,height (pixel coordinates of the pitcher's bounding region)")
     parser.add_argument("--no-open", action="store_true", help="Don't open report in browser")
+    parser.add_argument("--no-3d", action="store_true",
+                        help="Force 2D-only mode (skip MotionBERT 3D lifting)")
     parser.add_argument("--age", type=int, default=None, help="Pitcher age (youth mode)")
     parser.add_argument("--height", type=float, default=None, help="Height in inches (youth mode)")
     parser.add_argument("--weight", type=float, default=None, help="Weight in lbs (youth mode)")
@@ -54,6 +57,7 @@ def main() -> None:
         confidence_threshold=args.confidence,
         throws=args.throws,
         roi=roi,
+        no_3d=args.no_3d,
         age=args.age,
         height_inches=args.height,
         weight_lbs=args.weight,
