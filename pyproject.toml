@@ -33,7 +33,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["src*", "vendor*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
