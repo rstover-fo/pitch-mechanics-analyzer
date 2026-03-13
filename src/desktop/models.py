@@ -75,6 +75,7 @@ class Pitch:
     error_message: str = ""
     output_dir: str = ""
     report_html: str = ""
+    parent_report_html: str = ""
     coaching_report: str = ""
     fps: Optional[float] = None
     total_frames: Optional[int] = None
@@ -180,6 +181,7 @@ CREATE TABLE IF NOT EXISTS pitches (
     error_message TEXT DEFAULT '',
     output_dir TEXT DEFAULT '',
     report_html TEXT DEFAULT '',
+    parent_report_html TEXT DEFAULT '',
     coaching_report TEXT DEFAULT '',
     fps REAL,
     total_frames INTEGER,
@@ -256,6 +258,7 @@ class Database:
         else:
             self.conn.executescript(_NEW_SCHEMA_SQL)
             self._ensure_schema_version()
+        self._ensure_parent_report_column()
 
     def close(self) -> None:
         if self._conn is not None:
@@ -271,6 +274,18 @@ class Database:
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,),
         ).fetchone()
         return row is not None
+
+    def _ensure_parent_report_column(self) -> None:
+        """Add parent_report_html column if missing (upgrade from earlier schema)."""
+        cols = {
+            row["name"]
+            for row in self.conn.execute("PRAGMA table_info(pitches)").fetchall()
+        }
+        if "parent_report_html" not in cols:
+            self.conn.execute(
+                "ALTER TABLE pitches ADD COLUMN parent_report_html TEXT DEFAULT ''"
+            )
+            self.conn.commit()
 
     def _needs_migration(self) -> bool:
         """Return True if the old v1 schema is present (analysis_sessions table)."""
@@ -550,13 +565,15 @@ class Database:
 
     def update_pitch_completed(
         self, pitch_id: int, report_html: str, coaching_report: str, output_dir: str,
+        parent_report_html: str = "",
     ) -> None:
         self.conn.execute(
             """UPDATE pitches
-               SET status='completed', report_html=?, coaching_report=?, output_dir=?,
+               SET status='completed', report_html=?, parent_report_html=?,
+                   coaching_report=?, output_dir=?,
                    completed_at=CURRENT_TIMESTAMP
                WHERE id=?""",
-            (report_html, coaching_report, output_dir, pitch_id),
+            (report_html, parent_report_html, coaching_report, output_dir, pitch_id),
         )
         self.conn.commit()
 
@@ -756,6 +773,7 @@ class Database:
             error_message=row["error_message"] or "",
             output_dir=row["output_dir"] or "",
             report_html=row["report_html"] or "",
+            parent_report_html=row["parent_report_html"] or "",
             coaching_report=row["coaching_report"] or "",
             fps=row["fps"], total_frames=row["total_frames"],
             frames_with_poses=row["frames_with_poses"],

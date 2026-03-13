@@ -45,8 +45,10 @@ from src.coaching.insights import (
     load_prompt,
 )
 from src.pose.estimator import PoseSequence, extract_poses, load_video
+from src.viz.overlay import render_graded_overlay
 from src.viz.plots import plot_percentile_gauges, plot_pitcher_comparison
 from src.viz.report import build_report_html
+from src.viz.report_parent import build_parent_report_html
 from src.viz.skeleton import draw_angle_arc, draw_skeleton
 from src.viz.trajectories import (
     plot_confidence_heatmap,
@@ -94,6 +96,7 @@ class PipelineResult:
     pose_mode: str = "2d"
     coaching_report: str = ""
     report_html: str = ""
+    parent_report_html: str = ""
     output_dir: Optional[Path] = None
     validation_warnings: list = field(default_factory=list)
 
@@ -337,6 +340,16 @@ class PitchAnalysisPipeline:
             report_path.write_text(report_html)
         cb("report_generation", 1.0)
 
+        # Stage 8: Parent report (youth mode only)
+        parent_report_html = ""
+        if self._has_youth_profile() and cfg.generate_report:
+            parent_report_html = self._generate_parent_report(
+                video_path, pose_seq, events, metrics,
+                youth_profile_dict=youth_profile_dict,
+                key_frame_images=key_frame_images,
+                output_dir=output_dir,
+            )
+
         return PipelineResult(
             pose_sequence=pose_seq,
             events=events,
@@ -346,6 +359,7 @@ class PitchAnalysisPipeline:
             pose_mode=pose_mode,
             coaching_report=coaching_text,
             report_html=report_html,
+            parent_report_html=parent_report_html,
             output_dir=output_dir,
             validation_warnings=validation_warnings,
         )
@@ -775,6 +789,56 @@ class PitchAnalysisPipeline:
             additional = f"MEASUREMENT CAVEATS:\n{caveats}"
 
         return additional
+
+    def _generate_parent_report(
+        self,
+        video_path: Path,
+        pose_seq: PoseSequence,
+        events: DeliveryEvents,
+        metrics: PitcherMetrics,
+        youth_profile_dict: Optional[dict],
+        key_frame_images: dict[str, str],
+        output_dir: Path,
+    ) -> str:
+        """Generate a parent-friendly HTML report with graded overlay."""
+        cfg = self.config
+
+        # Build graded foot-plant overlay
+        overlay_b64: Optional[str] = None
+        if events.foot_plant is not None and events.foot_plant < len(pose_seq.frames):
+            pf = pose_seq.frames[events.foot_plant]
+            # Read the foot-plant frame from video
+            cap = cv2.VideoCapture(str(video_path))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, pf.frame_idx)
+            ret, frame = cap.read()
+            cap.release()
+            if ret:
+                frame = render_graded_overlay(
+                    frame, pf.keypoints, pf.confidence,
+                    metrics, throws=cfg.throws,
+                )
+                overlay_b64 = _encode_frame_as_base64(frame)
+
+        # Fall back to the existing foot plant key frame if overlay failed
+        if overlay_b64 is None:
+            overlay_b64 = key_frame_images.get("Foot Plant")
+
+        pitcher_name = "Pitcher"
+        from datetime import date as _date
+        analysis_date = _date.today().isoformat()
+
+        parent_html = build_parent_report_html(
+            pitcher_name=pitcher_name,
+            video_filename=video_path.name,
+            throws=cfg.throws,
+            metrics=metrics,
+            foot_plant_overlay_b64=overlay_b64,
+            pitcher_profile=youth_profile_dict,
+            analysis_date=analysis_date,
+        )
+        parent_report_path = output_dir / "parent_report.html"
+        parent_report_path.write_text(parent_html)
+        return parent_html
 
     def _build_metrics_rows(
         self, metrics: PitcherMetrics, obp_comparisons: list[dict],

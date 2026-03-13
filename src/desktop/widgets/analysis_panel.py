@@ -457,6 +457,7 @@ class AnalysisPanel(QWidget):
             report_html=result.report_html,
             coaching_report=result.coaching_report,
             output_dir=str(result.output_dir) if result.output_dir else "",
+            parent_report_html=result.parent_report_html,
         )
 
         # Parse events → pitch_events
