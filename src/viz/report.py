@@ -192,7 +192,7 @@ def _format_height_imperial(inches: float) -> str:
 
 def build_report_html(
     video_filename: str,
-    video_rel_path: str,
+    video_rel_path: Optional[str],
     fps: float,
     frame_count: int,
     backend: str,
@@ -337,7 +337,8 @@ def build_report_html(
             parts.append(f'<div class="plot-container">{plot_html}</div>\n')
 
     # --- 7. Annotated Video ---
-    parts.append(f"""<h2>Annotated Video</h2>
+    if video_rel_path:
+        parts.append(f"""<h2>Annotated Video</h2>
 <video controls>
 <source src="{escape(video_rel_path)}" type="video/mp4">
 Your browser does not support the video tag.

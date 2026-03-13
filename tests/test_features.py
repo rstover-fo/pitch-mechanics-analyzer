@@ -164,6 +164,80 @@ class TestExtractMetrics:
         assert metrics.max_arm_speed is not None
         assert metrics.max_arm_speed > 0
 
+    def test_max_arm_speed_with_nan_frames(self, delivery_events):
+        """max_arm_speed should ignore NaN frames and still return a valid value."""
+        rng = np.random.RandomState(99)
+        n = 60
+        wrist = np.column_stack([
+            np.linspace(400, 500, n) + rng.randn(n),
+            np.linspace(240, 200, n) + rng.randn(n),
+        ])
+        # Inject NaN in a few frames
+        wrist[10] = [np.nan, np.nan]
+        wrist[30] = [np.nan, np.nan]
+
+        kp = {
+            "right_shoulder": np.tile([320, 200], (n, 1)).astype(float),
+            "right_elbow": np.tile([360, 220], (n, 1)).astype(float),
+            "right_wrist": wrist,
+            "right_hip": np.tile([310, 350], (n, 1)).astype(float),
+            "right_knee": np.tile([310, 450], (n, 1)).astype(float),
+            "right_ankle": np.tile([310, 540], (n, 1)).astype(float),
+            "left_shoulder": np.tile([280, 200], (n, 1)).astype(float),
+            "left_elbow": np.tile([240, 220], (n, 1)).astype(float),
+            "left_wrist": np.tile([200, 240], (n, 1)).astype(float),
+            "left_hip": np.tile([290, 350], (n, 1)).astype(float),
+            "left_knee": np.tile([270, 450], (n, 1)).astype(float),
+            "left_ankle": np.tile([250, 540], (n, 1)).astype(float),
+        }
+        metrics = extract_metrics(keypoints=kp, events=delivery_events, pitcher_throws="R")
+        assert metrics.max_arm_speed is not None
+        assert not np.isnan(metrics.max_arm_speed)
+        assert metrics.max_arm_speed > 0
+
+    def test_max_arm_speed_all_nan(self, delivery_events):
+        """When ALL wrist positions are NaN, max_arm_speed should be None."""
+        n = 60
+        wrist = np.full((n, 2), np.nan)
+        kp = {
+            "right_shoulder": np.tile([320, 200], (n, 1)).astype(float),
+            "right_elbow": np.tile([360, 220], (n, 1)).astype(float),
+            "right_wrist": wrist,
+            "right_hip": np.tile([310, 350], (n, 1)).astype(float),
+            "right_knee": np.tile([310, 450], (n, 1)).astype(float),
+            "right_ankle": np.tile([310, 540], (n, 1)).astype(float),
+            "left_shoulder": np.tile([280, 200], (n, 1)).astype(float),
+            "left_elbow": np.tile([240, 220], (n, 1)).astype(float),
+            "left_wrist": np.tile([200, 240], (n, 1)).astype(float),
+            "left_hip": np.tile([290, 350], (n, 1)).astype(float),
+            "left_knee": np.tile([270, 450], (n, 1)).astype(float),
+            "left_ankle": np.tile([250, 540], (n, 1)).astype(float),
+        }
+        metrics = extract_metrics(keypoints=kp, events=delivery_events, pitcher_throws="R")
+        assert metrics.max_arm_speed is None
+
+    def test_max_hip_shoulder_separation_zero_is_valid(self, delivery_events):
+        """When hips and shoulders are always parallel, max_hip_shoulder_separation should be 0.0, not None."""
+        n = 60
+        # All joints static — hip and shoulder lines perfectly parallel
+        kp = {
+            "right_shoulder": np.tile([320, 200], (n, 1)).astype(float),
+            "right_elbow": np.tile([360, 220], (n, 1)).astype(float),
+            "right_wrist": np.tile([400, 240], (n, 1)).astype(float),
+            "right_hip": np.tile([320, 350], (n, 1)).astype(float),
+            "right_knee": np.tile([310, 450], (n, 1)).astype(float),
+            "right_ankle": np.tile([310, 540], (n, 1)).astype(float),
+            "left_shoulder": np.tile([280, 200], (n, 1)).astype(float),
+            "left_elbow": np.tile([240, 220], (n, 1)).astype(float),
+            "left_wrist": np.tile([200, 240], (n, 1)).astype(float),
+            "left_hip": np.tile([280, 350], (n, 1)).astype(float),
+            "left_knee": np.tile([270, 450], (n, 1)).astype(float),
+            "left_ankle": np.tile([250, 540], (n, 1)).astype(float),
+        }
+        metrics = extract_metrics(keypoints=kp, events=delivery_events, pitcher_throws="R")
+        assert metrics.max_hip_shoulder_separation is not None
+        assert metrics.max_hip_shoulder_separation == pytest.approx(0.0, abs=1.0)
+
     def test_max_hip_shoulder_sep_gte_fp(self, synthetic_keypoints, delivery_events):
         """Max hip-shoulder separation should be >= separation at foot plant."""
         metrics = extract_metrics(

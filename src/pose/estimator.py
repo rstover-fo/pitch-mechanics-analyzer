@@ -78,9 +78,17 @@ class PoseFrame:
     """Keypoint detections for a single frame."""
     frame_idx: int
     timestamp: float
-    keypoints: dict[str, np.ndarray]    # joint_name -> (x, y)
+    keypoints: dict[str, np.ndarray]    # joint_name -> (x, y) or (x, y, z)
     confidence: dict[str, float]         # joint_name -> confidence score
     bbox: Optional[np.ndarray] = None    # Person bounding box [x1, y1, x2, y2]
+
+    @property
+    def is_3d(self) -> bool:
+        """True if keypoints contain 3D coordinates."""
+        if not self.keypoints:
+            return False
+        first = next(iter(self.keypoints.values()))
+        return first.shape[-1] == 3
 
 
 @dataclass
@@ -90,13 +98,21 @@ class PoseSequence:
     frames: list[PoseFrame] = field(default_factory=list)
 
     def get_joint_trajectory(self, joint: str) -> np.ndarray:
-        """Get (N, 2) array of joint positions across all frames."""
+        """Get (N, D) array of joint positions across all frames (D=2 or 3)."""
+        # Determine dimensionality from first valid keypoint
+        dim = 2
+        for f in self.frames:
+            if joint in f.keypoints:
+                dim = f.keypoints[joint].shape[-1]
+                break
+
         positions = []
+        nan_fill = np.full(dim, np.nan)
         for frame in self.frames:
             if joint in frame.keypoints:
                 positions.append(frame.keypoints[joint])
             else:
-                positions.append(np.array([np.nan, np.nan]))
+                positions.append(nan_fill)
         return np.array(positions)
 
     def get_joint_speed(self, joint: str) -> np.ndarray:
@@ -110,7 +126,7 @@ class PoseSequence:
         """Convert to dict format expected by feature extraction.
 
         Returns:
-            Dict mapping joint names to (N_frames, 2) arrays.
+            Dict mapping joint names to (N_frames, D) arrays (D=2 or 3).
         """
         result = {}
         for joint in PITCHING_JOINTS:
@@ -127,6 +143,8 @@ class PoseSequence:
             for joint, pos in frame.keypoints.items():
                 row[f"{joint}_x"] = pos[0]
                 row[f"{joint}_y"] = pos[1]
+                if pos.shape[-1] == 3:
+                    row[f"{joint}_z"] = pos[2]
             for joint, conf in frame.confidence.items():
                 row[f"{joint}_conf"] = conf
             records.append(row)
@@ -265,9 +283,8 @@ def extract_poses_yolo(
                 keypoints = {}
                 confidences = {}
                 for name, idx in YOLO_KEYPOINTS.items():
-                    if name in PITCHING_JOINTS or name == "nose":
-                        keypoints[name] = person_kpts[idx, :2]
-                        confidences[name] = float(person_kpts[idx, 2])
+                    keypoints[name] = person_kpts[idx, :2]
+                    confidences[name] = float(person_kpts[idx, 2])
 
                 # Get bounding box for the selected person
                 bbox = None

@@ -5,6 +5,7 @@ Usage:
     python scripts/validate_pose.py --video path/to/clip.mp4
     python scripts/validate_pose.py --video path/to/clip.mp4 --throws L --backend mediapipe
     python scripts/validate_pose.py --video path/to/clip.mp4 --age 12 --height 60 --weight 95
+    python scripts/validate_pose.py --video path/to/clip.mp4 --no-3d
 """
 
 import argparse
@@ -25,8 +26,11 @@ def main() -> None:
     parser.add_argument("--model-size", type=str, default="m", choices=["n", "s", "m", "l", "x"])
     parser.add_argument("--confidence", type=float, default=0.3)
     parser.add_argument("--output-dir", type=str, default=None)
-    parser.add_argument("--roi", type=str, default=None, help="x,y,w,h crop region")
+    parser.add_argument("--roi", type=str, default=None,
+                        help="x,y,width,height (pixel coordinates of the pitcher's bounding region)")
     parser.add_argument("--no-open", action="store_true", help="Don't open report in browser")
+    parser.add_argument("--no-3d", action="store_true",
+                        help="Force 2D-only mode (skip MotionBERT 3D lifting)")
     parser.add_argument("--age", type=int, default=None, help="Pitcher age (youth mode)")
     parser.add_argument("--height", type=float, default=None, help="Height in inches (youth mode)")
     parser.add_argument("--weight", type=float, default=None, help="Weight in lbs (youth mode)")
@@ -51,7 +55,7 @@ def main() -> None:
             x, y, w, h = [int(v) for v in parts]
         except ValueError:
             parser.error("--roi values must be integers")
-        roi = (x, y, x + w, y + h)
+        roi = (x, y, x + w, y + h)  # Convert x,y,w,h to x1,y1,x2,y2 for estimator
 
     config = PipelineConfig(
         backend=args.backend,
@@ -59,6 +63,7 @@ def main() -> None:
         confidence_threshold=args.confidence,
         throws=args.throws,
         roi=roi,
+        no_3d=args.no_3d,
         age=args.age,
         height_inches=args.height,
         weight_lbs=args.weight,
