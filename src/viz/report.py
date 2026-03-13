@@ -12,6 +12,24 @@ from typing import Optional
 
 _PLOTLY_CDN = "https://cdn.plot.ly/plotly-latest.min.js"
 
+
+def _get_plotly_js() -> str:
+    """Return Plotly.js source for inline embedding.
+
+    Uses the bundled plotly.js from the installed package so reports
+    render offline (and inside QWebEngineView from file:// URLs).
+    Falls back to CDN script tag if the package isn't available.
+    """
+    try:
+        import plotly
+        from pathlib import Path as _P
+        bundle = _P(plotly.__file__).parent / "package_data" / "plotly.min.js"
+        if bundle.exists():
+            return f"<script>{bundle.read_text()}</script>"
+    except Exception:
+        pass
+    return f'<script src="{_PLOTLY_CDN}"></script>'
+
 _CSS = """
 body {
     background: #0a0a0a;
@@ -235,7 +253,7 @@ def build_report_html(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pitch Mechanics Report — {escape(video_filename)}</title>
-<script src="{_PLOTLY_CDN}"></script>
+{_get_plotly_js()}
 <style>{_CSS}</style>
 </head>
 <body>
