@@ -48,7 +48,13 @@ def main() -> None:
 
     roi = None
     if args.roi:
-        x, y, w, h = (int(v) for v in args.roi.split(","))
+        parts = args.roi.split(",")
+        if len(parts) != 4:
+            parser.error("--roi requires exactly 4 values: x,y,width,height")
+        try:
+            x, y, w, h = [int(v) for v in parts]
+        except ValueError:
+            parser.error("--roi values must be integers")
         roi = (x, y, x + w, y + h)  # Convert x,y,w,h to x1,y1,x2,y2 for estimator
 
     config = PipelineConfig(

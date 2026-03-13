@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pitch-mechanics-analyzer"
 version = "0.1.0"
 description = "Analyze youth/developing pitcher mechanics from video using computer vision and OBP benchmarks"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "Personal use only"}
 dependencies = [
     "numpy>=1.24",
@@ -21,6 +21,8 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "tqdm>=4.66",
+    "PyQt6>=6.5",
+    "PyQt6-WebEngine>=6.5",
 ]
 
 [project.optional-dependencies]
@@ -37,5 +39,5 @@ include = ["src*"]
 testpaths = ["tests"]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
