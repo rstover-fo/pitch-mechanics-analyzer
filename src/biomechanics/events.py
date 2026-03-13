@@ -318,6 +318,104 @@ def approximate_shoulder_er_2d(
     return float(np.degrees(np.arccos(cos_angle)))
 
 
+def detect_events_from_pose_sequence(
+    pose_sequence,
+    fps: float = 30.0,
+    pitcher_throws: str = "R",
+) -> DeliveryEvents:
+    """Run full event detection pipeline on a PoseSequence.
+
+    Uses the anchor-based approach: find MER first (most reliable marker),
+    then detect other events relative to it.
+
+    Args:
+        pose_sequence: PoseSequence from the pose estimation module.
+        fps: Video frame rate.
+        pitcher_throws: "R" or "L" to determine lead/drive sides.
+
+    Returns:
+        DeliveryEvents with detected frame indices.
+    """
+    from scipy.ndimage import uniform_filter1d
+
+    lead_side = "left" if pitcher_throws == "R" else "right"
+    throw_side = "right" if pitcher_throws == "R" else "left"
+
+    # Build trajectory arrays from pose sequence
+    lead_knee_traj = pose_sequence.get_joint_trajectory(f"{lead_side}_knee")
+    lead_knee_y_inverted = -lead_knee_traj[:, 1]
+
+    lead_ankle_traj = pose_sequence.get_joint_trajectory(f"{lead_side}_ankle")
+    lead_ankle_x_raw = lead_ankle_traj[:, 0]
+    lead_ankle_y_raw = lead_ankle_traj[:, 1]
+
+    # Wrist speed: pixels/frame * fps = pixels/second, then smooth
+    throw_wrist = f"{throw_side}_wrist"
+    wrist_speed_raw = pose_sequence.get_joint_speed(throw_wrist) * fps
+    kernel = np.ones(3) / 3
+    wrist_speed = np.convolve(wrist_speed_raw, kernel, mode="same")
+
+    # Approximate shoulder ER per frame
+    shoulder_er_series = np.zeros(len(pose_sequence.frames))
+    for i, pf in enumerate(pose_sequence.frames):
+        shoulder_key = f"{throw_side}_shoulder"
+        elbow_key = f"{throw_side}_elbow"
+        wrist_key = f"{throw_side}_wrist"
+        l_hip_key = "left_hip"
+        r_hip_key = "right_hip"
+
+        has_all = all(
+            k in pf.keypoints
+            for k in [shoulder_key, elbow_key, wrist_key, l_hip_key, r_hip_key]
+        )
+        if has_all:
+            hip_center = (pf.keypoints[l_hip_key] + pf.keypoints[r_hip_key]) / 2
+            shoulder_er_series[i] = approximate_shoulder_er_2d(
+                pf.keypoints[shoulder_key],
+                pf.keypoints[elbow_key],
+                pf.keypoints[wrist_key],
+                hip_center,
+            )
+
+    # Anchor-based detection:
+    # 1. Find MER (anchor) via ER trough before peak wrist speed
+    # 2. Ball release = peak wrist speed shortly after MER
+    # 3. Foot plant = ankle stabilization before MER
+    # 4. Leg lift = peak knee height before foot plant
+    events = DeliveryEvents(fps=fps)
+
+    events.max_external_rotation = find_delivery_anchor(
+        shoulder_er_series, wrist_speed, fps=fps,
+    )
+
+    if events.max_external_rotation is not None:
+        events.ball_release = detect_ball_release(
+            wrist_speed, after_frame=events.max_external_rotation,
+        )
+        events.foot_plant = detect_foot_plant_from_keypoints(
+            lead_ankle_y_raw, lead_ankle_x=lead_ankle_x_raw, fps=fps,
+            before_frame=events.max_external_rotation,
+        )
+        events.leg_lift_apex = detect_leg_lift(
+            lead_knee_y_inverted,
+            before_frame=events.foot_plant,
+        )
+    else:
+        # Fallback: independent detection without anchor
+        events.leg_lift_apex = detect_leg_lift(lead_knee_y_inverted)
+        events.foot_plant = detect_foot_plant_from_keypoints(
+            lead_ankle_y_raw, lead_ankle_x=lead_ankle_x_raw, fps=fps,
+        )
+        events.max_external_rotation = detect_max_external_rotation(
+            shoulder_er_series, after_frame=events.foot_plant,
+        )
+        events.ball_release = detect_ball_release(
+            wrist_speed, after_frame=events.max_external_rotation,
+        )
+
+    return events
+
+
 def detect_events(
     keypoints_df: pd.DataFrame,
     fps: float = 30.0,
@@ -327,9 +425,6 @@ def detect_events(
 
     Expected columns depend on the pose estimation backend, but should include
     at minimum: lead_knee_y, lead_ankle_y, shoulder_er_angle, wrist_speed.
-
-    This is a stub that will be fleshed out once the pose estimation module
-    provides standardized keypoint DataFrames.
 
     Args:
         keypoints_df: DataFrame with per-frame keypoint data.
@@ -341,32 +436,100 @@ def detect_events(
     """
     events = DeliveryEvents(fps=fps)
 
-    # Map lead/drive side based on handedness
-    # Right-handed pitcher: lead leg = left, drive leg = right
     lead_side = "left" if pitcher_throws == "R" else "right"
+    throw_side = "right" if pitcher_throws == "R" else "left"
 
-    # These column name patterns will be standardized by the pose module
     lead_knee_col = f"{lead_side}_knee_y"
-    lead_ankle_col = f"{lead_side}_ankle_y"
+    lead_ankle_y_col = f"{lead_side}_ankle_y"
+    lead_ankle_x_col = f"{lead_side}_ankle_x"
+    wrist_speed_col = f"{throw_side}_wrist_speed"
 
-    if lead_knee_col in keypoints_df.columns:
-        events.leg_lift_apex = detect_leg_lift(keypoints_df[lead_knee_col].values)
+    # Build shoulder ER series if individual keypoint columns exist
+    shoulder_er_series = None
+    shoulder_col = f"{throw_side}_shoulder"
+    elbow_col = f"{throw_side}_elbow"
+    wrist_col = f"{throw_side}_wrist"
+    has_keypoints = all(
+        f"{col}_{axis}" in keypoints_df.columns
+        for col in [shoulder_col, elbow_col, wrist_col, "left_hip", "right_hip"]
+        for axis in ["x", "y"]
+    )
+    if has_keypoints:
+        shoulder_er_series = np.zeros(len(keypoints_df))
+        for i in range(len(keypoints_df)):
+            row = keypoints_df.iloc[i]
+            shoulder = np.array([row[f"{shoulder_col}_x"], row[f"{shoulder_col}_y"]])
+            elbow = np.array([row[f"{elbow_col}_x"], row[f"{elbow_col}_y"]])
+            wrist = np.array([row[f"{wrist_col}_x"], row[f"{wrist_col}_y"]])
+            hip_center = np.array([
+                (row["left_hip_x"] + row["right_hip_x"]) / 2,
+                (row["left_hip_y"] + row["right_hip_y"]) / 2,
+            ])
+            shoulder_er_series[i] = approximate_shoulder_er_2d(
+                shoulder, elbow, wrist, hip_center,
+            )
+    elif "shoulder_er_angle" in keypoints_df.columns:
+        shoulder_er_series = keypoints_df["shoulder_er_angle"].values
 
-    if lead_ankle_col in keypoints_df.columns:
-        events.foot_plant = detect_foot_plant_from_keypoints(
-            keypoints_df[lead_ankle_col].values, fps=fps
+    # Build wrist speed series
+    wrist_speed = None
+    if wrist_speed_col in keypoints_df.columns:
+        wrist_speed = keypoints_df[wrist_speed_col].values * fps
+        kernel = np.ones(3) / 3
+        wrist_speed = np.convolve(wrist_speed, kernel, mode="same")
+    elif "wrist_speed" in keypoints_df.columns:
+        wrist_speed = keypoints_df["wrist_speed"].values
+
+    # Anchor-based detection when we have both ER and wrist speed
+    if shoulder_er_series is not None and wrist_speed is not None:
+        events.max_external_rotation = find_delivery_anchor(
+            shoulder_er_series, wrist_speed, fps=fps,
         )
 
-    if "shoulder_er_angle" in keypoints_df.columns:
-        events.max_external_rotation = detect_max_external_rotation(
-            keypoints_df["shoulder_er_angle"].values,
-            after_frame=events.foot_plant,
-        )
-
-    if "wrist_speed" in keypoints_df.columns:
-        events.ball_release = detect_ball_release(
-            keypoints_df["wrist_speed"].values,
-            after_frame=events.max_external_rotation,
-        )
+    if events.max_external_rotation is not None:
+        if wrist_speed is not None:
+            events.ball_release = detect_ball_release(
+                wrist_speed, after_frame=events.max_external_rotation,
+            )
+        if lead_ankle_y_col in keypoints_df.columns:
+            lead_ankle_x = (
+                keypoints_df[lead_ankle_x_col].values
+                if lead_ankle_x_col in keypoints_df.columns
+                else None
+            )
+            events.foot_plant = detect_foot_plant_from_keypoints(
+                keypoints_df[lead_ankle_y_col].values,
+                lead_ankle_x=lead_ankle_x,
+                fps=fps,
+                before_frame=events.max_external_rotation,
+            )
+        if lead_knee_col in keypoints_df.columns:
+            events.leg_lift_apex = detect_leg_lift(
+                keypoints_df[lead_knee_col].values,
+                before_frame=events.foot_plant,
+            )
+    else:
+        # Fallback: independent detection
+        if lead_knee_col in keypoints_df.columns:
+            events.leg_lift_apex = detect_leg_lift(keypoints_df[lead_knee_col].values)
+        if lead_ankle_y_col in keypoints_df.columns:
+            lead_ankle_x = (
+                keypoints_df[lead_ankle_x_col].values
+                if lead_ankle_x_col in keypoints_df.columns
+                else None
+            )
+            events.foot_plant = detect_foot_plant_from_keypoints(
+                keypoints_df[lead_ankle_y_col].values,
+                lead_ankle_x=lead_ankle_x,
+                fps=fps,
+            )
+        if shoulder_er_series is not None:
+            events.max_external_rotation = detect_max_external_rotation(
+                shoulder_er_series, after_frame=events.foot_plant,
+            )
+        if wrist_speed is not None:
+            events.ball_release = detect_ball_release(
+                wrist_speed, after_frame=events.max_external_rotation,
+            )
 
     return events

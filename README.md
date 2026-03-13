@@ -19,7 +19,7 @@ Video → Pose Estimation → Event Detection → Feature Extraction → Benchma
 # Clone and install
 git clone <this-repo>
 cd pitch-mechanics-analyzer
-pip install -r requirements.txt
+pip install -e .
 
 # Set up OBP benchmark data (one-time)
 # Copy POI metrics from Driveline's repo into data/obp/
@@ -27,12 +27,16 @@ git clone https://github.com/drivelineresearch/openbiomechanics /tmp/obp
 cp /tmp/obp/baseball_pitching/data/poi/poi_metrics.csv data/obp/
 cp /tmp/obp/baseball_pitching/data/metadata.csv data/obp/
 
-# Run benchmark analysis
+# Analyze a pitching video
+python scripts/validate_pose.py --video path/to/pitch.mp4 --throws R
+
+# With youth profile (age-adjusted benchmarks)
+python scripts/validate_pose.py --video path/to/pitch.mp4 --throws R \
+    --age 12 --height 60 --weight 95
+
+# Explore benchmark distributions
 python scripts/analyze_benchmarks.py
 python scripts/analyze_benchmarks.py --level high_school --output data/outputs/hs_benchmarks.html
-
-# Analyze a video (Phase 2+)
-python scripts/analyze_video.py --video path/to/pitch.mp4 --throws R
 
 # Run tests
 pytest tests/ -v
@@ -41,37 +45,47 @@ pytest tests/ -v
 ## Project Structure
 
 ```
-CLAUDE.md               ← Claude Code project context
 src/
-  pose/estimator.py     ← Video → keypoints (YOLOv8 / MediaPipe)
+  pipeline.py               ← PitchAnalysisPipeline: composable end-to-end pipeline
+  pose/estimator.py          ← Video → keypoints (YOLOv8 / MediaPipe)
   biomechanics/
-    benchmarks.py       ← OBP data loading, percentile distributions
-    events.py           ← Delivery event detection (foot plant, MER, release)
-    features.py         ← Biomechanical metric extraction from keypoints
-  coaching/insights.py  ← Claude API coaching report generation
-  viz/plots.py          ← Plotly visualizations (radar, gauges, distributions)
-  utils/config.py       ← Configuration dataclasses
+    events.py                ← Delivery event detection (leg lift, foot plant, MER, release)
+    features.py              ← Biomechanical metric extraction from keypoints
+    benchmarks.py            ← OBP data loading, percentile distributions
+    validation.py            ← Pipeline output sanity checks
+    youth_normalizer.py      ← Age/size-adjusted benchmark comparisons
+  coaching/insights.py       ← Claude API & offline coaching report generation
+  viz/
+    plots.py                 ← Plotly visualizations (radar, gauges)
+    report.py                ← HTML report builder
+    skeleton.py              ← Skeleton overlay drawing
+    trajectories.py          ← Joint trajectory plots
+  utils/config.py            ← Configuration dataclasses
 scripts/
-  analyze_benchmarks.py ← CLI: explore OBP benchmark distributions
-  analyze_video.py      ← CLI: full video analysis pipeline
-tests/
-  test_benchmarks.py    ← pytest suite
+  validate_pose.py           ← CLI: full diagnostic report generation
+  analyze_benchmarks.py      ← CLI: explore OBP benchmark distributions
+  eval_events.py             ← Accuracy evaluation vs ground truth
+  eval_consistency.py        ← Event detection consistency tests
+  label_events.py            ← Frame-by-frame event labeler
+  youth_demo.py              ← Youth normalizer demo
+tests/                       ← pytest suite
 data/
-  obp/                  ← Driveline OBP reference data
-  uploads/              ← User videos
-  outputs/              ← Generated reports and charts
+  obp/                       ← Driveline OBP reference data
+  prompts/                   ← Coaching prompt templates
+  ground_truth/              ← Labeled event data for evaluation
+  outputs/                   ← Generated reports and charts
 ```
 
 ## Development Phases
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| 1 | ✅ Done | OBP benchmark loader + distribution analysis |
-| 2 | 🔲 Next | Video → pose estimation → keypoint extraction |
-| 3 | 🔲 | Automated event detection from keypoints |
-| 4 | 🔲 | Feature extraction aligned to OBP metrics |
-| 5 | 🔲 | Claude API coaching report generation |
-| 6 | 🔲 | Streamlit UI for upload → report workflow |
+| 1 | ✅ Complete | OBP benchmark loader + distribution analysis |
+| 2 | ✅ Complete | Video → pose estimation → keypoint extraction (YOLOv8/MediaPipe) |
+| 3 | ✅ Complete | Automated event detection from keypoints (anchor-based approach) |
+| 4 | ✅ Complete | Feature extraction aligned to OBP metrics + percentile comparison |
+| 5 | ✅ Complete | Claude API coaching report generation with youth normalization |
+| 6 | 🔲 Planned | Desktop App for upload → report workflow |
 
 ## Data Source
 

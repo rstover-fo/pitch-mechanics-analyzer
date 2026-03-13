@@ -310,7 +310,8 @@ class TestExtractMetrics2dUnchanged:
         metrics = extract_metrics(keypoints, events, pitcher_throws="R", use_3d=False)
 
         # 3D-specific metrics should NOT be computed
-        assert metrics.hip_shoulder_separation_fp is None
+        # Note: hip_shoulder_separation_fp IS computed in 2D mode (added in PR #3)
+        assert metrics.hip_shoulder_separation_fp is not None
         assert metrics.shoulder_abduction_fp is None
         assert metrics.shoulder_horizontal_abduction_fp is None
 
