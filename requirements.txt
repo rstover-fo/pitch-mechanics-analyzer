@@ -12,5 +12,7 @@ anthropic>=0.40
 pyyaml>=6.0
 python-dotenv>=1.0
 tqdm>=4.66
+PyQt6>=6.5
+PyQt6-WebEngine>=6.5
 pytest>=7.4
 ruff>=0.1
