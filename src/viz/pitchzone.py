@@ -102,7 +102,9 @@ GRADE_RULES: dict[str, tuple[float, float]] = {
 # ---------------------------------------------------------------------------
 
 _THREE_JS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "three.min.js")
+_ORBIT_JS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "OrbitControls.js")
 _THREE_JS_CONTENT: Optional[str] = None
+_ORBIT_JS_CONTENT: Optional[str] = None
 
 
 def _load_threejs() -> str:
@@ -111,6 +113,14 @@ def _load_threejs() -> str:
         with open(_THREE_JS_PATH, "r", encoding="utf-8") as fh:
             _THREE_JS_CONTENT = fh.read()
     return _THREE_JS_CONTENT
+
+
+def _load_orbit_controls() -> str:
+    global _ORBIT_JS_CONTENT
+    if _ORBIT_JS_CONTENT is None:
+        with open(_ORBIT_JS_PATH, "r", encoding="utf-8") as fh:
+            _ORBIT_JS_CONTENT = fh.read()
+    return _ORBIT_JS_CONTENT
 
 
 # ---------------------------------------------------------------------------
@@ -610,7 +620,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
       const mesh = new THREE.Mesh(geo, mat);
       mesh.quaternion.copy(quat);
       mesh.position.copy(origin);
-      scene.add(mesh);
+      group.add(mesh);
     }}
 
     // Layer 0: dim full-range background
@@ -648,7 +658,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
       new THREE.BufferGeometry().setFromPoints(idealPts), idealLineMat
     );
     idealLine.computeLineDistances();
-    scene.add(idealLine);
+    group.add(idealLine);
 
     // Actual-value marker (bright line + diamond)
     if (actualVal !== undefined && actualVal !== null) {{
@@ -663,7 +673,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
         origin.clone(),
         origin.clone().addScaledVector(actDir, rayLen * 1.12)
       ];
-      scene.add(new THREE.Line(
+      group.add(new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(actPts),
         new THREE.LineBasicMaterial({{ color: actColor, transparent: true, opacity: 0.9 }})
       ));
@@ -673,14 +683,14 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
       const diamMat = new THREE.MeshBasicMaterial({{ color: actColor, transparent: true, opacity: 0.95 }});
       const diam = new THREE.Mesh(diamGeo, diamMat);
       diam.position.copy(origin.clone().addScaledVector(actDir, rayLen * 1.12));
-      scene.add(diam);
+      group.add(diam);
 
       // Glow sphere at tip
       const glowGeo = new THREE.SphereGeometry(0.04, 8, 6);
       const glowMat = new THREE.MeshBasicMaterial({{ color: actColor, transparent: true, opacity: 0.3 }});
       const glow = new THREE.Mesh(glowGeo, glowMat);
       glow.position.copy(diam.position);
-      scene.add(glow);
+      group.add(glow);
     }}
 
     // Edge rays for the full arc
@@ -689,11 +699,11 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
     const edgeDirN = new THREE.Vector3(
       Math.cos(arcSpan), Math.sin(arcSpan), 0
     ).applyQuaternion(quat);
-    scene.add(new THREE.Line(
+    group.add(new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([origin.clone(), origin.clone().addScaledVector(edgeDir0, rayLen * 0.9)]),
       edgeMat
     ));
-    scene.add(new THREE.Line(
+    group.add(new THREE.Line(
       new THREE.BufferGeometry().setFromPoints([origin.clone(), origin.clone().addScaledVector(edgeDirN, rayLen * 0.9)]),
       edgeMat
     ));
@@ -794,7 +804,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
       shoulderCenter.clone().addScaledVector(shoulderLine, -shRayLen),
       shoulderCenter.clone().addScaledVector(shoulderLine,  shRayLen)
     ];
-    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(shPts), shLineMat));
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(shPts), shLineMat));
 
     // Shoulder plane triangular fan (flat in XZ, at shoulder height)
     const shFanGeo = createFanGeo(-Math.PI * 0.15, Math.PI * 0.15, shRayLen, 16);
@@ -811,7 +821,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
     const shMat4 = new THREE.Matrix4().makeBasis(shX, shY, shZ);
     shFan.quaternion.setFromRotationMatrix(shMat4);
     shFan.position.copy(shoulderCenter);
-    scene.add(shFan);
+    group.add(shFan);
 
     // Small diamonds at shoulder line endpoints
     [shPts[0], shPts[1]].forEach(pt => {{
@@ -819,7 +829,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
       const dMat = new THREE.MeshBasicMaterial({{ color: 0x8888ff, transparent: true, opacity: 0.85 }});
       const d = new THREE.Mesh(dGeo, dMat);
       d.position.copy(pt);
-      scene.add(d);
+      group.add(d);
     }});
 
     // Hip plane ray
@@ -829,7 +839,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
       hipCenter.clone().addScaledVector(hipLine, -hpRayLen),
       hipCenter.clone().addScaledVector(hipLine,  hpRayLen)
     ];
-    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(hpPts), hpLineMat));
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(hpPts), hpLineMat));
 
     // Hip plane triangular fan
     const hpFanGeo = createFanGeo(-Math.PI * 0.13, Math.PI * 0.13, hpRayLen, 16);
@@ -845,7 +855,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
     const hpMat4 = new THREE.Matrix4().makeBasis(hpX, hpY, hpZ);
     hpFan.quaternion.setFromRotationMatrix(hpMat4);
     hpFan.position.copy(hipCenter);
-    scene.add(hpFan);
+    group.add(hpFan);
 
     // Diamonds at hip line endpoints
     [hpPts[0], hpPts[1]].forEach(pt => {{
@@ -853,7 +863,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
       const dMat = new THREE.MeshBasicMaterial({{ color: color, transparent: true, opacity: 0.85 }});
       const d = new THREE.Mesh(dGeo, dMat);
       d.position.copy(pt);
-      scene.add(d);
+      group.add(d);
     }});
 
     // Connecting vertical dashed lines between shoulder and hip endpoints
@@ -869,7 +879,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
     const connGeoL = new THREE.BufferGeometry().setFromPoints(connPtsL);
     const connLineL = new THREE.Line(connGeoL, connMat);
     connLineL.computeLineDistances();
-    scene.add(connLineL);
+    group.add(connLineL);
 
     // Right side connection
     const connPtsR = [
@@ -879,7 +889,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
     const connGeoR = new THREE.BufferGeometry().setFromPoints(connPtsR);
     const connLineR = new THREE.Line(connGeoR, connMat);
     connLineR.computeLineDistances();
-    scene.add(connLineR);
+    group.add(connLineR);
 
     // Angular wedge between shoulder and hip planes (the separation fill)
     // This colored wedge shows the gap between the two rotation planes
@@ -915,7 +925,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
         side: THREE.DoubleSide, depthWrite: false,
         emissive: color, emissiveIntensity: gp.emissiveInt * 0.5
       }});
-      scene.add(new THREE.Mesh(bandGeo, bandMat));
+      group.add(new THREE.Mesh(bandGeo, bandMat));
     }}
   }}
 
@@ -951,12 +961,37 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
   }}
 
   // -------------------------------------------------------------------------
-  // Render loop (slow auto-rotation)
+  // OrbitControls + render loop
   // -------------------------------------------------------------------------
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.85, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.rotateSpeed   = 0.6;
+  controls.zoomSpeed     = 0.8;
+  controls.panSpeed      = 0.5;
+  controls.minDistance   = 1.0;
+  controls.maxDistance   = 6.0;
+  controls.maxPolarAngle = Math.PI * 0.85;  // don't go below floor
+  controls.autoRotate    = true;
+  controls.autoRotateSpeed = 0.4;  // slow idle spin
+  controls.update();
+
+  // Stop auto-rotate when user interacts, restart after idle
+  let idleTimer = null;
+  controls.addEventListener('start', () => {{
+    controls.autoRotate = false;
+    if (idleTimer) clearTimeout(idleTimer);
+  }});
+  controls.addEventListener('end', () => {{
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {{ controls.autoRotate = true; }}, 4000);
+  }});
+
   let frameId;
   function animate() {{
     frameId = requestAnimationFrame(animate);
-    group.rotation.y += 0.0008;
+    controls.update();
     renderer.render(scene, camera);
   }}
   animate();
@@ -1026,6 +1061,7 @@ def generate_pitchzone_html(
     overlay_html = _build_overlay_html(cleaned, throws, score)
     scene_js    = _build_scene_js(cleaned, throws, score, width, height, metrics=metrics)
     three_js    = _load_threejs()
+    orbit_js    = _load_orbit_controls()
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1045,8 +1081,12 @@ def generate_pitchzone_html(
   {overlay_html}
 </div>
 <script>
-/* Three.js r153 — inline */
+/* Three.js r154 — inline */
 {three_js}
+</script>
+<script>
+/* OrbitControls — inline */
+{orbit_js}
 </script>
 <script>
 {scene_js}
@@ -1070,12 +1110,13 @@ def generate_pitchzone_svg(
     height: int = 600,
 ) -> str:
     """
-    Backward-compatible name.
-    Returns an <iframe srcdoc="..."> element that embeds the Three.js scene
-    inside a parent HTML report.  The full-page version is generate_pitchzone_html().
+    Backward-compatible wrapper for report_parent.py embedding.
+    Returns an <iframe srcdoc="..."> containing the full PitchZone HTML.
+    This lets the self-contained Three.js page live inside a parent
+    report document without CSS/JS collisions.
     """
-    from html import escape as html_escape
-    full_html = generate_pitchzone_html(
+    import html as _html
+    inner = generate_pitchzone_html(
         grades=grades,
         metrics=metrics,
         throws=throws,
@@ -1083,14 +1124,12 @@ def generate_pitchzone_svg(
         width=width,
         height=height,
     )
-    # Wrap in an iframe for safe embedding inside report_parent.py
-    escaped = html_escape(full_html, quote=True)
+    escaped = _html.escape(inner, quote=True)
     return (
         f'<iframe srcdoc="{escaped}" '
         f'width="{width}" height="{height}" '
-        f'style="border:none;border-radius:10px;display:block;width:100%;max-width:{width}px;" '
-        f'sandbox="allow-scripts" '
-        f'title="{title}"></iframe>'
+        f'style="border:none;" '
+        f'sandbox="allow-scripts"></iframe>'
     )
 
 

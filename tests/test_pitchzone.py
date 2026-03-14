@@ -369,3 +369,12 @@ class TestEdgeCases:
         assert "shoulderLine" in html
         assert "hipLine" in html
         assert "shoulderCenter" in html
+
+    def test_orbit_controls_present(self):
+        html = generate_pitchzone_html(ALL_GREEN)
+        assert "OrbitControls" in html
+        assert "controls.enableDamping" in html
+
+    def test_orbit_controls_in_svg_wrapper(self):
+        result = generate_pitchzone_svg(ALL_GREEN)
+        assert "OrbitControls" in result
