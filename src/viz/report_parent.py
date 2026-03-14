@@ -2,12 +2,13 @@
 
 Coaching-first layout aimed at parents and young players:
   1. Header with pitcher name / date
-  2. Side-by-side: real key frame (with overlay) + SVG target pose
-  3. Stoplight grade report card
-  4. Drill homework (max 3, only for yellow/red grades)
-  5. Coach's note (Claude API with offline fallback)
-  6. Growth snapshot (if youth profile provided)
-  7. Injury watch callout
+  2. PitchZone diagram (SwingAI-inspired 3D figure with colored zone bands + score gauge)
+  3. Key frame overlay (actual foot-plant photo with graded joint rings)
+  4. Stoplight grade report card
+  5. Drill homework (max 3, only for yellow/red grades)
+  6. Coach's note (Claude API with offline fallback)
+  7. Growth snapshot (if youth profile provided)
+  8. Injury watch callout
 """
 
 import os
@@ -16,10 +17,10 @@ from typing import Optional
 
 from src.biomechanics.features import PitcherMetrics
 from src.viz.overlay import GRADE_RULES, _grade_color, _GREEN, _AMBER, _RED
-from src.viz.target_pose import build_target_pose_svg
+from src.viz.pitchzone import generate_pitchzone_svg, ZONE_BANDS
 
 
-# ── Drill prescriptions ────────────────────────────────────────────────
+# ── Drill prescriptions ────────────────────────────────────────────────────────────────────────
 DRILL_MAP: dict[str, dict[str, str]] = {
     "elbow_flexion_fp": {
         "name": "Elbow Spiral Drill",
@@ -59,18 +60,18 @@ DRILL_MAP: dict[str, dict[str, str]] = {
     },
 }
 
-# ── Display names for metrics ──────────────────────────────────────────
+# ── Display names for metrics ──────────────────────────────────────────────────────────────────
 _DISPLAY_NAMES: dict[str, str] = {
-    "elbow_flexion_fp": "Elbow Angle",
-    "shoulder_abduction_fp": "Arm Height",
-    "torso_anterior_tilt_fp": "Trunk Posture",
+    "elbow_flexion_fp":           "Elbow Angle",
+    "shoulder_abduction_fp":      "Arm Height",
+    "torso_anterior_tilt_fp":     "Trunk Posture",
     "hip_shoulder_separation_fp": "Hip-Shoulder Separation",
-    "stride_length_pct_height": "Stride Length",
-    "lead_knee_angle_fp": "Front Knee Brace",
+    "stride_length_pct_height":   "Stride Length",
+    "lead_knee_angle_fp":         "Front Knee Brace",
 }
 
-# ── CSS ─────────────────────────────────────────────────────────────────
-_CSS = """\
+# ── CSS ───────────────────────────────────────────────────────────────────────────────────
+CSS = """\
 body {
     background: #0a0a0a;
     color: #e0e0e0;
@@ -93,30 +94,38 @@ h1 {
     font-size: 0.9rem;
     margin-bottom: 1.5rem;
 }
-.side-by-side {
-    display: flex;
-    gap: 1.5rem;
-    flex-wrap: wrap;
+
+/* PitchZone section */
+.pitchzone-section {
     margin-bottom: 2rem;
 }
-.side-by-side > div {
-    flex: 1;
-    min-width: 280px;
-}
-.side-by-side img {
-    width: 100%;
-    border-radius: 8px;
-    border: 1px solid #333;
-}
-.side-by-side svg {
+.pitchzone-section iframe {
     width: 100%;
     height: auto;
+    min-height: 600px;
+    border-radius: 10px;
+    display: block;
 }
-.label-bar {
+.section-label {
     text-align: center;
-    color: #aaa;
-    font-size: 0.85rem;
-    margin-top: 0.5rem;
+    color: #666;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 0.4rem;
+}
+
+/* Key frame */
+.keyframe-section {
+    margin-bottom: 2rem;
+}
+.keyframe-section img {
+    width: 100%;
+    max-width: 480px;
+    display: block;
+    margin: 0 auto;
+    border-radius: 8px;
+    border: 1px solid #333;
 }
 
 /* Stoplight report card */
@@ -141,9 +150,9 @@ h1 {
     margin-right: 1rem;
     flex-shrink: 0;
 }
-.grade-dot.green  { background: #27AE60; box-shadow: 0 0 6px #27AE60; }
-.grade-dot.amber  { background: #F5A623; box-shadow: 0 0 6px #F5A623; }
-.grade-dot.red    { background: #E74C3C; box-shadow: 0 0 6px #E74C3C; }
+.grade-dot.green  { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.grade-dot.amber  { background: #eab308; box-shadow: 0 0 6px #eab308; }
+.grade-dot.red    { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
 .grade-name {
     flex: 1;
     font-weight: 500;
@@ -268,6 +277,9 @@ footer {
 }
 """
 
+# Keep _CSS as an alias for backward compat
+_CSS = CSS
+
 
 def _grade_class(metric_name: str, metrics: PitcherMetrics) -> str:
     """Return CSS class for the grade dot."""
@@ -277,6 +289,11 @@ def _grade_class(metric_name: str, metrics: PitcherMetrics) -> str:
     elif color == _AMBER:
         return "amber"
     return "red"
+
+
+def _grade_to_pitchzone(css_class: str) -> str:
+    """Convert CSS grade class to pitchzone grade string."""
+    return {"green": "green", "amber": "yellow", "red": "red"}.get(css_class, "yellow")
 
 
 def _format_value(metric_name: str, metrics: PitcherMetrics) -> str:
@@ -434,7 +451,17 @@ def build_parent_report_html(
     pitcher_profile: Optional[dict] = None,
     analysis_date: str = "",
 ) -> str:
-    """Build a self-contained HTML parent report.
+    """Build a self-contained HTML parent report with PitchZone visualization.
+
+    Layout:
+        1. Header (name, date, handedness)
+        2. PitchZone diagram (3D mannequin + colored zone bands + score gauge)
+        3. Key frame overlay (actual foot-plant photo, if provided)
+        4. Stoplight grade report card
+        5. Drill homework (max 3, only amber/red)
+        6. Coach's note
+        7. Growth snapshot (if pitcher_profile provided)
+        8. Injury watch
 
     Args:
         pitcher_name: Player display name.
@@ -450,7 +477,7 @@ def build_parent_report_html(
     """
     parts: list[str] = []
 
-    # ── Document open ───────────────────────────────────────────────
+    # ── Document open ──────────────────────────────────────────────────────────────────
     parts.append(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -463,33 +490,50 @@ def build_parent_report_html(
 <div class="container">
 """)
 
-    # ── 1. Header ───────────────────────────────────────────────────
-    date_str = f" — {escape(analysis_date)}" if analysis_date else ""
-    parts.append(f'<h1>{escape(pitcher_name)} — Pitching Report</h1>\n')
-    parts.append(f'<div class="subtitle">{escape(video_filename)}{date_str}</div>\n')
+    # ── 1. Header ────────────────────────────────────────────────────────────────────
+    hand_label = "RHP" if throws == "R" else "LHP"
+    date_str = f" · {escape(analysis_date)}" if analysis_date else ""
+    parts.append(f'<h1>⚾ {escape(pitcher_name)} — Pitching Report</h1>\n')
+    parts.append(
+        f'<div class="subtitle">{escape(video_filename)}{date_str} · {hand_label}</div>\n'
+    )
 
-    # ── 2. Side-by-side: overlay + target pose ──────────────────────
-    target_svg = build_target_pose_svg(throws=throws)
-    parts.append('<div class="side-by-side">\n')
-    if foot_plant_overlay_b64:
-        parts.append(f"""<div>
-<img src="data:image/png;base64,{foot_plant_overlay_b64}" alt="Foot Plant with Overlay">
-<div class="label-bar">Your Foot Plant</div>
-</div>
-""")
-    parts.append(f"""<div>
-{target_svg}
-<div class="label-bar">Target Position (ASMI)</div>
-</div>
-""")
+    # ── 2. Collect grades first (needed for PitchZone + report card) ─────
+    css_grades: dict[str, str] = {}
+    for metric_name in GRADE_RULES:
+        css_grades[metric_name] = _grade_class(metric_name, metrics)
+
+    # Convert to pitchzone grade strings (green/yellow/red)
+    pz_grades: dict[str, str] = {
+        m: _grade_to_pitchzone(g) for m, g in css_grades.items()
+    }
+
+    # ── 3. PitchZone diagram ──────────────────────────────────────────────────
+    pitchzone_svg = generate_pitchzone_svg(
+        grades=pz_grades,
+        metrics={m: getattr(metrics, m, None) for m in GRADE_RULES},
+        throws=throws,
+        title="PitchZone",
+    )
+    parts.append('<div class="pitchzone-section">\n')
+    parts.append(pitchzone_svg)
+    parts.append('\n<div class="section-label">PitchZone · Foot Plant Analysis</div>\n')
     parts.append('</div>\n')
 
-    # ── 3. Stoplight grade report card ──────────────────────────────
-    grades: dict[str, str] = {}
-    parts.append('<div class="report-card">\n<h2>Report Card</h2>\n')
+    # ── 4. Key frame overlay ──────────────────────────────────────────────────
+    if foot_plant_overlay_b64:
+        parts.append('<div class="keyframe-section">\n')
+        parts.append(
+            f'<img src="data:image/png;base64,{foot_plant_overlay_b64}" '
+            f'alt="Foot Plant with Overlay">\n'
+        )
+        parts.append('<div class="section-label">Your Foot Plant</div>\n')
+        parts.append('</div>\n')
+
+    # ── 5. Stoplight grade report card ───────────────────────────────────────
+    parts.append('<div class="report-card">\n<h2>Breakdown</h2>\n')
     for metric_name in GRADE_RULES:
-        grade = _grade_class(metric_name, metrics)
-        grades[metric_name] = grade
+        grade = css_grades[metric_name]
         display = _DISPLAY_NAMES.get(metric_name, metric_name)
         value_str = _format_value(metric_name, metrics)
         target_str = _format_target(metric_name)
@@ -502,8 +546,8 @@ def build_parent_report_html(
 """)
     parts.append('</div>\n')
 
-    # ── 4. Drill homework (max 3, only amber/red) ──────────────────
-    focus_metrics = [m for m, g in grades.items() if g in ("amber", "red")][:3]
+    # ── 6. Drill homework (max 3, only amber/red) ──────────────────────────
+    focus_metrics = [m for m, g in css_grades.items() if g in ("amber", "red")][:3]
     if focus_metrics:
         parts.append('<div class="drills">\n<h2>This Week\'s Homework</h2>\n')
         for metric_name in focus_metrics:
@@ -517,15 +561,15 @@ def build_parent_report_html(
 """)
         parts.append('</div>\n')
 
-    # ── 5. Coach's note ─────────────────────────────────────────────
-    coach_text = _generate_coach_note(metrics, grades, pitcher_name)
+    # ── 7. Coach's note ─────────────────────────────────────────────────────────
+    coach_text = _generate_coach_note(metrics, css_grades, pitcher_name)
     parts.append(f"""<div class="coach-note">
 <h2>Coach's Note</h2>
 <p>{escape(coach_text)}</p>
 </div>
 """)
 
-    # ── 6. Growth snapshot ──────────────────────────────────────────
+    # ── 8. Growth snapshot ─────────────────────────────────────────────────────────
     if pitcher_profile:
         age = pitcher_profile.get("age", "")
         height_in = pitcher_profile.get("height_in")
@@ -543,12 +587,12 @@ def build_parent_report_html(
 </div>
 """)
 
-    # ── 7. Injury watch ─────────────────────────────────────────────
+    # ── 9. Injury watch ───────────────────────────────────────────────────────────
     injury_html = _build_injury_watch(metrics)
     if injury_html:
         parts.append(injury_html)
 
-    # ── Footer ──────────────────────────────────────────────────────
+    # ── Footer ────────────────────────────────────────────────────────────────────
     parts.append("""<footer>
 Generated by Pitch Mechanics Analyzer. Movement analysis from video is approximate —
 consult a qualified coach for a complete evaluation.
