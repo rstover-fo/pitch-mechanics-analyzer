@@ -253,19 +253,13 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
 
     return f"""
 (function() {{
-  // -------------------------------------------------------------------------
-  // Data
-  // -------------------------------------------------------------------------
   const GRADES = {grades_json};
   const THROWS = "{throws.upper()}";
   const SCORE  = {score};
-  const MIRROR = {mirror};  // +1 RHP, -1 LHP
-  const GRADE_RULES = {rules_json};  // metric -> [ideal, tolerance]
-  const METRICS = {metrics_json};     // metric -> actual value (may be empty)
+  const MIRROR = {mirror};
+  const GRADE_RULES = {rules_json};
+  const METRICS = {metrics_json};
 
-  // -------------------------------------------------------------------------
-  // Renderer
-  // -------------------------------------------------------------------------
   const canvas = document.getElementById('pz-canvas');
   const renderer = new THREE.WebGLRenderer({{ canvas, antialias: true }});
   renderer.setSize({width}, {height});
@@ -274,9 +268,6 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputEncoding = THREE.sRGBEncoding;
 
-  // -------------------------------------------------------------------------
-  // Scene & Camera
-  // -------------------------------------------------------------------------
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0a0a);
   scene.fog = new THREE.FogExp2(0x0a0a0a, 0.18);
@@ -285,9 +276,6 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
   camera.position.set(MIRROR * 1.6, 1.55, 2.6);
   camera.lookAt(0, 0.85, 0);
 
-  // -------------------------------------------------------------------------
-  // Lights
-  // -------------------------------------------------------------------------
   scene.add(new THREE.AmbientLight(0x333355, 0.9));
 
   const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -306,41 +294,22 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
   fillLight.position.set(1.5, 2, 1);
   scene.add(fillLight);
 
-  // -------------------------------------------------------------------------
-  // Floor grid
-  // -------------------------------------------------------------------------
   const gridHelper = new THREE.GridHelper(6, 24, 0x1a1a2e, 0x1a1a2e);
   gridHelper.position.y = 0;
   scene.add(gridHelper);
 
   const floorGeo = new THREE.PlaneGeometry(6, 6);
-  const floorMat = new THREE.MeshStandardMaterial({{
-    color: 0x0d0d1a, roughness: 0.95, metalness: 0.05
-  }});
+  const floorMat = new THREE.MeshStandardMaterial({{ color: 0x0d0d1a, roughness: 0.95, metalness: 0.05 }});
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // -------------------------------------------------------------------------
-  // Materials
-  // -------------------------------------------------------------------------
-  const bodyMat = new THREE.MeshStandardMaterial({{
-    color: 0xb0b0b8, metalness: 0.15, roughness: 0.65
-  }});
-  const jointMat = new THREE.MeshStandardMaterial({{
-    color: 0xc8c8d8, metalness: 0.2, roughness: 0.5
-  }});
-  const uniformMat = new THREE.MeshStandardMaterial({{
-    color: 0x1a3a6a, metalness: 0.1, roughness: 0.7
-  }});
-  const pantsMat = new THREE.MeshStandardMaterial({{
-    color: 0xd8d8e8, metalness: 0.05, roughness: 0.8
-  }});
+  const bodyMat  = new THREE.MeshStandardMaterial({{ color: 0xb0b0b8, metalness: 0.15, roughness: 0.65 }});
+  const jointMat = new THREE.MeshStandardMaterial({{ color: 0xc8c8d8, metalness: 0.2,  roughness: 0.5  }});
+  const uniformMat = new THREE.MeshStandardMaterial({{ color: 0x1a3a6a, metalness: 0.1, roughness: 0.7  }});
+  const pantsMat = new THREE.MeshStandardMaterial({{ color: 0xd8d8e8, metalness: 0.05, roughness: 0.8  }});
 
-  // -------------------------------------------------------------------------
-  // Helper: cylinder between two points
-  // -------------------------------------------------------------------------
   function cylinderBetween(p1, p2, radius, mat) {{
     const dir = new THREE.Vector3().subVectors(p2, p1);
     const len = dir.length();
@@ -348,10 +317,7 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
     const mesh = new THREE.Mesh(geo, mat);
     const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
     mesh.position.copy(mid);
-    mesh.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      dir.clone().normalize()
-    );
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
     mesh.castShadow = true;
     return mesh;
   }}
@@ -364,45 +330,214 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
     return mesh;
   }}
 
-  // -------------------------------------------------------------------------
-  // Key positions (RHP; MIRROR flips X for LHP)
-  // -------------------------------------------------------------------------
-  const M = MIRROR;  // shorthand
-
-  // Head & neck
+  const M = MIRROR;
   const headPos     = new THREE.Vector3(0, 1.72, 0);
   const neckBot     = new THREE.Vector3(0, 1.55, 0);
-
-  // Torso
-  const shoulderL   = new THREE.Vector3( 0.25 * M, 1.42, 0);   // glove shoulder
-  const shoulderR   = new THREE.Vector3(-0.25 * M, 1.42, 0);   // throw shoulder
+  const shoulderL   = new THREE.Vector3( 0.25 * M, 1.42, 0);
+  const shoulderR   = new THREE.Vector3(-0.25 * M, 1.42, 0);
   const pelvisPos   = new THREE.Vector3(0.04 * M, 0.88, 0.0);
-
-  // Throwing arm — cocked at foot plant
   const throwShoulder = shoulderR.clone();
   const throwElbow    = new THREE.Vector3(-0.45 * M, 1.32, -0.18);
   const throwWrist    = new THREE.Vector3(-0.38 * M, 1.52, -0.06);
   const throwHand     = new THREE.Vector3(-0.33 * M, 1.62,  0.02);
-
-  // Glove arm — extended forward-down
   const gloveShoulder = shoulderL.clone();
   const gloveElbow    = new THREE.Vector3( 0.42 * M, 1.15,  0.22);
   const gloveWrist    = new THREE.Vector3( 0.50 * M, 1.02,  0.35);
   const gloveHand     = new THREE.Vector3( 0.52 * M, 0.96,  0.44);
+  const hipR      = new THREE.Vector3(-0.14 * M, 0.90, 0);
+  const hipL      = new THREE.Vector3( 0.14 * M, 0.90, 0);
+  const kneeR     = new THREE.Vector3(-0.18 * M, 0.50, -0.08);
+  const kneeL     = new THREE.Vector3( 0.20 * M, 0.52,  0.45);
+  const ankleR    = new THREE.Vector3(-0.16 * M, 0.10, -0.06);
+  const ankleL    = new THREE.Vector3( 0.18 * M, 0.08,  0.62);
 
-  // Legs
-  const hipR      = new THREE.Vector3(-0.14 * M, 0.90, 0);    // pivot hip (throw side)
-  const hipL      = new THREE.Vector3( 0.14 * M, 0.90, 0);    // stride hip (glove side)
-  const kneeR     = new THREE.Vector3(-0.18 * M, 0.50, -0.08); // pivot knee (slightly bent)
-  const kneeL     = new THREE.Vector3( 0.20 * M, 0.52,  0.45); // lead knee
-  const ankleR    = new THREE.Vector3(-0.16 * M, 0.10, -0.06); // pivot ankle
-  const ankleL    = new THREE.Vector3( 0.18 * M, 0.08,  0.62); // lead ankle
+  const group = new THREE.Group();
 
+  const headGeo  = new THREE.SphereGeometry(0.115, 14, 12);
+  const headMesh = new THREE.Mesh(headGeo, bodyMat);
+  headMesh.position.copy(headPos);
+  headMesh.scale.set(1, 1.08, 0.92);
+  headMesh.castShadow = true;
+  group.add(headMesh);
+
+  group.add(cylinderBetween(neckBot, headPos, 0.055, bodyMat));
+
+  const torsoGeo = new THREE.CylinderGeometry(0.14, 0.12, 0.52, 10);
+  const torsoMesh = new THREE.Mesh(torsoGeo, uniformMat);
+  torsoMesh.position.set(0, 1.18, 0);
+  torsoMesh.castShadow = true;
+  group.add(torsoMesh);
+
+  const chestGeo = new THREE.SphereGeometry(0.18, 12, 8);
+  const chestMesh = new THREE.Mesh(chestGeo, uniformMat);
+  chestMesh.position.set(0, 1.38, 0);
+  chestMesh.scale.set(1.3, 0.55, 0.85);
+  chestMesh.castShadow = true;
+  group.add(chestMesh);
+
+  const hipsGeo  = new THREE.CylinderGeometry(0.13, 0.12, 0.22, 10);
+  const hipsMesh = new THREE.Mesh(hipsGeo, pantsMat);
+  hipsMesh.position.set(0.02 * M, 0.94, 0.0);
+  hipsMesh.castShadow = true;
+  group.add(hipsMesh);
+
+  group.add(cylinderBetween(throwShoulder, throwElbow, 0.052, bodyMat));
+  group.add(addJoint(throwElbow, 0.058, jointMat));
+  group.add(cylinderBetween(throwElbow, throwWrist, 0.044, bodyMat));
+  group.add(addJoint(throwWrist, 0.046, jointMat));
+  group.add(cylinderBetween(throwWrist, throwHand, 0.036, bodyMat));
+
+  group.add(cylinderBetween(gloveShoulder, gloveElbow, 0.052, bodyMat));
+  group.add(addJoint(gloveElbow, 0.056, jointMat));
+  group.add(cylinderBetween(gloveElbow, gloveWrist, 0.044, bodyMat));
+  group.add(addJoint(gloveWrist, 0.044, jointMat));
+  group.add(cylinderBetween(gloveWrist, gloveHand, 0.036, bodyMat));
+
+  const gloveGeo = new THREE.BoxGeometry(0.12, 0.10, 0.06);
+  const gloveMesh = new THREE.Mesh(gloveGeo, new THREE.MeshStandardMaterial({{ color: 0x6b3a1f, roughness: 0.9 }}));
+  gloveMesh.position.copy(gloveHand);
+  gloveMesh.rotation.z = 0.3 * M;
+  gloveMesh.castShadow = true;
+  group.add(gloveMesh);
+
+  group.add(addJoint(throwShoulder, 0.07, jointMat));
+  group.add(addJoint(gloveShoulder, 0.065, jointMat));
+
+  group.add(cylinderBetween(hipR, kneeR, 0.072, pantsMat));
+  group.add(addJoint(kneeR, 0.072, jointMat));
+  group.add(cylinderBetween(kneeR, ankleR, 0.060, pantsMat));
+  group.add(addJoint(ankleR, 0.060, jointMat));
+
+  group.add(cylinderBetween(hipL, kneeL, 0.072, pantsMat));
+  group.add(addJoint(kneeL, 0.075, jointMat));
+  group.add(cylinderBetween(kneeL, ankleL, 0.062, pantsMat));
+  group.add(addJoint(ankleL, 0.062, jointMat));
+
+  function addFoot(ankle, forward) {{
+    const geo  = new THREE.BoxGeometry(0.08, 0.06, 0.20);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({{ color: 0x202030, roughness: 0.85 }}));
+    mesh.position.set(ankle.x, ankle.y - 0.04, ankle.z + (forward ? 0.05 : -0.02));
+    mesh.castShadow = true;
+    return mesh;
+  }}
+  group.add(addFoot(ankleR, false));
+  group.add(addFoot(ankleL, true));
+  group.add(addJoint(hipR, 0.072, jointMat));
+  group.add(addJoint(hipL, 0.068, jointMat));
   scene.add(group);
 
-  // -------------------------------------------------------------------------
-  // Render loop
-  // -------------------------------------------------------------------------
+  function colorHex(grade) {{
+    if (grade === 'green')  return 0x22c55e;
+    if (grade === 'yellow') return 0xeab308;
+    return 0xef4444;
+  }}
+
+  function createRingSectorGeo(startAngle, endAngle, innerR, outerR, segments) {{
+    segments = segments || 20;
+    const geo = new THREE.BufferGeometry();
+    const verts = [];
+    const step = (endAngle - startAngle) / segments;
+    for (let i = 0; i < segments; i++) {{
+      const a0 = startAngle + step * i;
+      const a1 = startAngle + step * (i + 1);
+      const ci0 = Math.cos(a0), si0 = Math.sin(a0);
+      const ci1 = Math.cos(a1), si1 = Math.sin(a1);
+      verts.push(ci0*innerR, si0*innerR, 0, ci0*outerR, si0*outerR, 0, ci1*outerR, si1*outerR, 0);
+      verts.push(ci0*innerR, si0*innerR, 0, ci1*outerR, si1*outerR, 0, ci1*innerR, si1*innerR, 0);
+    }}
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    geo.computeVertexNormals();
+    return geo;
+  }}
+
+  function orientQuat(refDir, normal) {{
+    const xAxis = refDir.clone().normalize();
+    const zAxis = normal.clone().normalize();
+    const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
+    const m = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+    return new THREE.Quaternion().setFromRotationMatrix(m);
+  }}
+
+  function addRangeBands(origin, refDir, normal, metricKey, rayLen, arcSpan, rangeMin, rangeMax) {{
+    const rule = GRADE_RULES[metricKey];
+    if (!rule) return;
+    const ideal = rule[0], tol = rule[1];
+    const grade = GRADES[metricKey] || 'yellow';
+    const actualVal = METRICS[metricKey];
+    const degRange = rangeMax - rangeMin;
+    function degToArc(deg) {{ return ((deg - rangeMin) / degRange) * arcSpan; }}
+    function clampArc(a) {{ return Math.max(0, Math.min(arcSpan, a)); }}
+    const greenStart = clampArc(degToArc(ideal - tol));
+    const greenEnd   = clampArc(degToArc(ideal + tol));
+    const yellowStart = clampArc(degToArc(ideal - 2*tol));
+    const yellowEnd   = clampArc(degToArc(ideal + 2*tol));
+    const quat = orientQuat(refDir, normal);
+    function addBand(aStart, aEnd, color, opacity, emI, inner, outer) {{
+      if (aEnd - aStart < 0.01) return;
+      const geo = createRingSectorGeo(aStart, aEnd, inner, outer, 20);
+      const mat = new THREE.MeshStandardMaterial({{ color: color, transparent: true, opacity: opacity, side: THREE.DoubleSide, depthWrite: false, emissive: color, emissiveIntensity: emI }});
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.quaternion.copy(quat);
+      mesh.position.copy(origin);
+      scene.add(mesh);
+    }}
+    addBand(0, arcSpan, 0x333344, 0.08, 0.05, rayLen * 0.05, rayLen);
+    if (yellowStart > 0.01) addBand(0, yellowStart, 0xef4444, 0.22, 0.18, rayLen * 0.1, rayLen * 0.92);
+    if (arcSpan - yellowEnd > 0.01) addBand(yellowEnd, arcSpan, 0xef4444, 0.22, 0.18, rayLen * 0.1, rayLen * 0.92);
+    if (greenStart - yellowStart > 0.01) addBand(yellowStart, greenStart, 0xeab308, 0.28, 0.22, rayLen * 0.1, rayLen * 0.95);
+    if (yellowEnd - greenEnd > 0.01) addBand(greenEnd, yellowEnd, 0xeab308, 0.28, 0.22, rayLen * 0.1, rayLen * 0.95);
+    addBand(greenStart, greenEnd, 0x22c55e, 0.38, 0.40, rayLen * 0.1, rayLen);
+    const idealArc = clampArc(degToArc(ideal));
+    const idealDir = new THREE.Vector3(Math.cos(idealArc), Math.sin(idealArc), 0).applyQuaternion(quat);
+    const idealPts = [origin.clone(), origin.clone().addScaledVector(idealDir, rayLen * 1.05)];
+    const idealLineMat = new THREE.LineDashedMaterial({{ color: 0x22c55e, transparent: true, opacity: 0.5, dashSize: 0.02, gapSize: 0.015 }});
+    const idealLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(idealPts), idealLineMat);
+    idealLine.computeLineDistances();
+    scene.add(idealLine);
+    if (actualVal !== undefined && actualVal !== null) {{
+      const actArc = clampArc(degToArc(actualVal));
+      const actDir = new THREE.Vector3(Math.cos(actArc), Math.sin(actArc), 0).applyQuaternion(quat);
+      const actColor = colorHex(grade);
+      const actPts = [origin.clone(), origin.clone().addScaledVector(actDir, rayLen * 1.12)];
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(actPts), new THREE.LineBasicMaterial({{ color: actColor, transparent: true, opacity: 0.9 }})));
+      const diamGeo = new THREE.OctahedronGeometry(0.028);
+      const diam = new THREE.Mesh(diamGeo, new THREE.MeshBasicMaterial({{ color: actColor, transparent: true, opacity: 0.95 }}));
+      diam.position.copy(origin.clone().addScaledVector(actDir, rayLen * 1.12));
+      scene.add(diam);
+      const glow = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), new THREE.MeshBasicMaterial({{ color: actColor, transparent: true, opacity: 0.3 }}));
+      glow.position.copy(diam.position);
+      scene.add(glow);
+    }}
+    const edgeMat = new THREE.LineBasicMaterial({{ color: 0x555566, transparent: true, opacity: 0.3 }});
+    const edgeDir0 = new THREE.Vector3(1, 0, 0).applyQuaternion(quat);
+    const edgeDirN = new THREE.Vector3(Math.cos(arcSpan), Math.sin(arcSpan), 0).applyQuaternion(quat);
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin.clone(), origin.clone().addScaledVector(edgeDir0, rayLen * 0.9)]), edgeMat));
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([origin.clone(), origin.clone().addScaledVector(edgeDirN, rayLen * 0.9)]), edgeMat));
+  }}
+
+  // Zone 1: Arm Height
+  {{ const origin = throwShoulder.clone(); const refDir = new THREE.Vector3(-M * 0.85, 0.50, -0.1).normalize(); const normal = new THREE.Vector3(0, 0, M * 1).normalize(); addRangeBands(origin, refDir, normal, 'shoulder_abduction_fp', 0.32, Math.PI * 0.55, 40, 140); }}
+  // Zone 2: Elbow Bend
+  {{ const origin = throwElbow.clone(); const upperArmDir = new THREE.Vector3().subVectors(throwShoulder, throwElbow).normalize(); const forearmDir = new THREE.Vector3().subVectors(throwWrist, throwElbow).normalize(); const normal = new THREE.Vector3().crossVectors(upperArmDir, forearmDir).normalize(); if (normal.length() < 0.1) normal.set(0, 0, 1); addRangeBands(origin, forearmDir, normal, 'elbow_flexion_fp', 0.24, Math.PI * 0.55, 40, 140); }}
+  // Zone 3: Posture
+  {{ const torsoMid = new THREE.Vector3(0, 1.18, 0); const vertical = new THREE.Vector3(0, 1, 0); const leanDir = new THREE.Vector3(0, 0.5, 1).normalize(); const normal = new THREE.Vector3().crossVectors(vertical, leanDir).normalize(); if (normal.length() < 0.1) normal.set(1, 0, 0); addRangeBands(torsoMid, vertical, normal, 'torso_anterior_tilt_fp', 0.32, Math.PI * 0.33, 0, 60); }}
+  // Zone 4: Hip-Shoulder Separation
+  {{
+    const shoulderLine = new THREE.Vector3().subVectors(shoulderR, shoulderL); shoulderLine.y = 0; shoulderLine.normalize();
+    const shoulderCenter = new THREE.Vector3().addVectors(shoulderL, shoulderR).multiplyScalar(0.5); shoulderCenter.y = 1.42;
+    const hipLine = new THREE.Vector3().subVectors(hipR, hipL); hipLine.y = 0; hipLine.normalize();
+    const hipCenter = new THREE.Vector3().addVectors(hipR, hipL).multiplyScalar(0.5); hipCenter.y = 0.90;
+    const upAxis = new THREE.Vector3(0, 1, 0);
+    const shoulderNormal = new THREE.Vector3().crossVectors(shoulderLine, upAxis).normalize();
+    const hipNormal = new THREE.Vector3().crossVectors(hipLine, upAxis).normalize();
+    addRangeBands(shoulderCenter, shoulderLine, shoulderNormal, 'hip_shoulder_separation_fp', 0.30, Math.PI * 0.44, 0, 60);
+    addRangeBands(hipCenter, hipLine, hipNormal, 'hip_shoulder_separation_fp', 0.28, Math.PI * 0.44, 0, 60);
+  }}
+  // Zone 5: Stride
+  {{ const strideMid = new THREE.Vector3().addVectors(ankleR, ankleL).multiplyScalar(0.5); strideMid.y = 0.09; const strideDir = new THREE.Vector3().subVectors(ankleL, ankleR).normalize(); const up = new THREE.Vector3(0, 1, 0); const normal = new THREE.Vector3().crossVectors(strideDir, up).normalize(); addRangeBands(strideMid, strideDir, normal, 'stride_length_pct_height', 0.28, Math.PI * 0.44, 40, 120); }}
+  // Zone 6: Lead Knee
+  {{ const origin = kneeL.clone(); const thighDir = new THREE.Vector3().subVectors(kneeL, hipL).normalize(); const shinDir = new THREE.Vector3().subVectors(ankleL, kneeL).normalize(); const normal = new THREE.Vector3().crossVectors(thighDir, shinDir).normalize(); if (normal.length() < 0.1) normal.set(M, 0, 0); addRangeBands(origin, shinDir, normal, 'lead_knee_angle_fp', 0.22, Math.PI * 0.55, 100, 180); }}
+
   let animRunning = true;
   function animate() {{
     if (!animRunning) return;
@@ -412,4 +547,75 @@ def _build_scene_js(grades: dict[str, str], throws: str, score: int,
   }}
   animate();
 }})();
-"""
+"""  # noqa: E501
+
+
+def generate_pitchzone_html(
+    grades: dict[str, str],
+    metrics: Optional[dict] = None,
+    throws: str = "R",
+    title: str = "PitchZone",
+    width: int = 600,
+    height: int = 520,
+) -> str:
+    """Generate a standalone HTML page with the PitchZone Three.js 3D visualization.
+
+    Args:
+        grades:  mapping metric_key -> grade string ("green", "yellow", "red").
+        metrics: mapping metric_key -> actual float value (optional).
+        throws:  "R" (right-handed pitcher) or "L" (left-handed).
+        title:   page title text.
+        width:   canvas pixel width.
+        height:  canvas pixel height.
+
+    Returns:
+        Complete self-contained HTML string (DOCTYPE included).
+    """
+    threejs = _load_threejs()
+    score = calculate_pitchzone_score(grades)
+    overlay_html = _build_overlay_html(grades, throws, score)
+    scene_js = _build_scene_js(grades, throws, score, width, height, metrics)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+  * {{ margin:0; padding:0; box-sizing:border-box; }}
+  body {{ background:#0a0a0a; overflow:hidden; }}
+  #pz-wrapper {{ position:relative; width:{width}px; height:{height}px; }}
+  canvas {{ display:block; }}
+</style>
+</head>
+<body>
+<div id="pz-wrapper">
+  <canvas id="pz-canvas" width="{width}" height="{height}"></canvas>
+  {overlay_html}
+</div>
+<script>{threejs}</script>
+<script>{scene_js}</script>
+</body>
+</html>"""
+
+
+def generate_pitchzone_svg(
+    grades: dict[str, str],
+    metrics: Optional[dict] = None,
+    throws: str = "R",
+    title: str = "PitchZone",
+    width: int = 600,
+    height: int = 520,
+) -> str:
+    """Backward-compatible wrapper: returns an <iframe srcdoc=...> wrapping the HTML.
+
+    This preserves the old call signature used by report_parent.py.
+    """
+    from html import escape as _escape
+    html = generate_pitchzone_html(grades, metrics=metrics, throws=throws,
+                                   title=title, width=width, height=height)
+    safe = _escape(html, quote=True)
+    return (f'<iframe srcdoc="{safe}" '
+            f'width="{width}" height="{height}" '
+            f'frameborder="0" scrolling="no" '
+            f'sandbox="allow-scripts"></iframe>')
