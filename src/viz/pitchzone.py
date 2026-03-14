@@ -1,11 +1,13 @@
-"""SwingAI-inspired PitchZone visualization for pitcher mechanics at foot plant.
+"""SwingAI-inspired PitchZone v2 – angular wedge planes for pitcher mechanics.
 
-Generates a self-contained inline SVG of a mannequin-style pitcher figure at
-foot plant position with translucent colored zone bands (green/yellow/red) around
-each graded body region.  Dark background (#0a0a0a), 3D-ish perspective floor grid,
-SVG filter glow effects on zone bands.  Mirrored for LHP.
+Replaces v1's circular arc bands with 3D-perspective angular wedge planes
+emanating from joint pivot points, inspired by WinReality's SwingAI.
+Each zone shows a translucent colored wedge (green/yellow/red) radiating
+from the relevant joint, representing the angular range of motion.
 
+Dark background (#0a0a0a), 3D-ish perspective floor grid, SVG filter glow.
 Overall PitchZone Score displayed as a donut arc gauge (0–100).
+Mirrored for LHP.
 """
 
 from __future__ import annotations
@@ -101,69 +103,47 @@ _VH = 600   # viewBox height
 
 
 # ── RHP mannequin joint positions (in figure sub-canvas 0,0 → 400,560) ────────
-# Figure is centered at x=200, occupies y≈30–530 within the sub-canvas.
-# Named after mechanical role, not body-side, to simplify mirroring.
-#
-#  throw_*  = throwing arm side  (right for RHP)
-#  lead_*   = stride/glove side  (left  for RHP)
-#
 _RHP: dict[str, tuple[float, float]] = {
-    # Head / neck
     "head":              (200, 48),
     "neck":              (200, 75),
-    # Shoulders
     "throw_shoulder":    (168, 100),
     "lead_shoulder":     (232, 100),
-    # Throwing arm: cocked-back position (arm up, elbow bent ~90°)
     "throw_elbow":       (132, 78),
     "throw_wrist":       (118, 50),
-    # Glove arm: extended forward at ~shoulder height
     "lead_elbow":        (268, 112),
     "lead_wrist":        (298, 128),
-    # Torso centerline
     "chest":             (200, 120),
     "torso_mid":         (200, 175),
     "pelvis":            (200, 220),
-    # Hips
     "throw_hip":         (182, 228),
     "lead_hip":          (218, 228),
-    # Throw leg (back leg / pivot leg): knee bent, foot planted behind
     "throw_knee":        (175, 308),
     "throw_ankle":       (168, 388),
     "throw_foot_toe":    (148, 402),
     "throw_foot_heel":   (172, 400),
-    # Lead leg (stride leg): forward and planted at foot plant
     "lead_knee":         (295, 300),
     "lead_ankle":        (348, 372),
     "lead_foot_toe":     (372, 382),
     "lead_foot_heel":    (344, 376),
 }
 
-# Bone connections for the mannequin skeleton
 _BONES: list[tuple[str, str]] = [
-    # Spine / torso column
     ("neck",          "chest"),
     ("chest",         "torso_mid"),
     ("torso_mid",     "pelvis"),
-    # Shoulders
     ("neck",          "throw_shoulder"),
     ("neck",          "lead_shoulder"),
-    # Throwing arm
     ("throw_shoulder","throw_elbow"),
     ("throw_elbow",   "throw_wrist"),
-    # Glove arm
     ("lead_shoulder", "lead_elbow"),
     ("lead_elbow",    "lead_wrist"),
-    # Hips cross
     ("pelvis",        "throw_hip"),
     ("pelvis",        "lead_hip"),
     ("throw_hip",     "lead_hip"),
-    # Pivot leg
     ("throw_hip",     "throw_knee"),
     ("throw_knee",    "throw_ankle"),
     ("throw_ankle",   "throw_foot_toe"),
     ("throw_ankle",   "throw_foot_heel"),
-    # Lead leg
     ("lead_hip",      "lead_knee"),
     ("lead_knee",     "lead_ankle"),
     ("lead_ankle",    "lead_foot_toe"),
@@ -180,25 +160,14 @@ def _mirror(joints: dict[str, tuple[float, float]], cx: float = 200.0
 # ── Score calculation ───────────────────────────────────────────────────────────────────────────
 
 def calculate_pitchzone_score(grades: dict[str, str]) -> int:
-    """Compute overall PitchZone score (0–100) as equal-weight average.
-
-    Args:
-        grades: metric_name → "green" / "yellow" / "red".
-                Missing/unknown keys default to "yellow".
-    Returns:
-        Integer score 0–100.
-    """
+    """Compute overall PitchZone score (0–100) as equal-weight average."""
     if not grades:
-        return 65  # default mid-range when no data
+        return 65
     scores = [_GRADE_SCORE.get(g, _GRADE_SCORE["yellow"]) for g in grades.values()]
     return round(sum(scores) / len(scores))
 
 
-# ── SVG primitive helpers ────────────────────────────────────────────────────────────────────────
-
-def _pt(joints: dict, name: str) -> tuple[float, float]:
-    return joints[name]
-
+# ── SVG primitive helpers ───────────────────────────────────────────────────────────────────────
 
 def _lerp(a: tuple[float, float], b: tuple[float, float], t: float = 0.5
           ) -> tuple[float, float]:
@@ -207,15 +176,6 @@ def _lerp(a: tuple[float, float], b: tuple[float, float], t: float = 0.5
 
 def _dist(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(b[0]-a[0], b[1]-a[1])
-
-
-def _perpendicular_offset(
-    a: tuple[float, float], b: tuple[float, float], d: float
-) -> tuple[float, float]:
-    """Return a unit perpendicular to segment a→b, scaled by d."""
-    dx, dy = b[0]-a[0], b[1]-a[1]
-    length = math.hypot(dx, dy) or 1
-    return (-dy/length * d, dx/length * d)
 
 
 def _ellipse(cx: float, cy: float, rx: float, ry: float,
@@ -274,8 +234,8 @@ def _build_filters() -> str:
     for fid, color in [("glow-green", _GREEN), ("glow-yellow", _YELLOW), ("glow-red", _RED)]:
         filters.append(f"""
   <filter id="{fid}" x="-60%" y="-60%" width="220%" height="220%">
-    <feGaussianBlur stdDeviation="6" result="blur"/>
-    <feFlood flood-color="{color}" flood-opacity="0.8" result="color"/>
+    <feGaussianBlur stdDeviation="4" result="blur"/>
+    <feFlood flood-color="{color}" flood-opacity="0.7" result="color"/>
     <feComposite in="color" in2="blur" operator="in" result="glow"/>
     <feMerge>
       <feMergeNode in="glow"/>
@@ -300,44 +260,310 @@ def _glow_filter_id(color_key: str) -> str:
 
 def _build_floor_grid(ox: float = 350, oy: float = 500,
                       vp_x: float = 200, vp_y: float = 330) -> str:
-    """
-    Perspective grid on the bottom portion of the canvas.
-    Lines converge toward vanishing point (vp_x, vp_y).
-    Grid is drawn on a dark base rectangle.
-    """
     parts: list[str] = []
-    # Background floor plane
     parts.append(
         f'<polygon points="0,{oy} {_VW},{oy} {_VW},{_VH} 0,{_VH}" '
         f'fill="#080808"/>'
     )
-
     grid_color = "#1e1e1e"
     n_horiz = 7
     n_vert  = 10
-
-    # Horizontal lines (depth lines)
     for i in range(n_horiz + 1):
         t = i / n_horiz
         y = oy + t * (_VH - oy)
         parts.append(_line_svg(0, y, _VW, y, grid_color, 0.8, opacity=0.6 + 0.4*t))
-
-    # Vertical lines converging to VP
     left_x  = 0
     right_x = _VW
     bottom_y = _VH
-
     for i in range(n_vert + 1):
         t = i / n_vert
         bx = left_x + t * (right_x - left_x)
-        # Line from bottom edge converging toward VP
         parts.append(_line_svg(bx, bottom_y, vp_x, vp_y, grid_color, 0.8, opacity=0.5))
-
-    # Horizon glow line
     parts.append(
         f'<line x1="0" y1="{oy}" x2="{_VW}" y2="{oy}" '
         f'stroke="#2a2a3a" stroke-width="1.5" opacity="0.9"/>'
     )
+    return "\n".join(parts)
+
+
+# ── Angular wedge plane drawing ──────────────────────────────────────────────────────────────────
+
+def _wedge_plane(
+    pivot: tuple[float, float],
+    angle_center: float,
+    angle_span: float,
+    reach: float,
+    color: str,
+    opacity: float = 0.30,
+    filter_id: str = "",
+    depth_offset: float = 0.0,
+    skew_x: float = 0.0,
+    skew_y: float = 0.0,
+    n_depth_layers: int = 1,
+    depth_dx: float = 5.0,
+    depth_dy: float = 4.0,
+) -> str:
+    """Draw a translucent angular wedge plane emanating from a pivot joint.
+
+    The wedge is a fan/sector polygon: vertex at pivot, two rays spreading out
+    to 'reach' pixels away at the given angular range. Multiple depth layers
+    create a thick 3D volumetric illusion like SwingAI.
+
+    Args:
+        pivot:          (x, y) center of the wedge origin.
+        angle_center:   Central direction of the wedge in degrees (0=right, 90=down).
+        angle_span:     Total angular width of the wedge in degrees.
+        reach:          How far the wedge extends from pivot (pixels).
+        color:          Fill color.
+        opacity:        Fill opacity.
+        filter_id:      Optional SVG filter ID for glow.
+        depth_offset:   unused, kept for compat.
+        skew_x:         Additional x-offset to far edge points.
+        skew_y:         Additional y-offset to far edge points.
+        n_depth_layers: Number of stacked planes for 3D volume (1=flat, 3+=volumetric).
+        depth_dx:       X-offset per depth layer.
+        depth_dy:       Y-offset per depth layer.
+    """
+    parts: list[str] = []
+    filt = f' filter="url(#{filter_id})"' if filter_id else ""
+
+    half_span = angle_span / 2.0
+    start_deg = angle_center - half_span
+    end_deg   = angle_center + half_span
+    n_steps   = max(16, int(angle_span / 3))
+
+    # Draw depth layers back-to-front for volumetric 3D look
+    for layer in range(n_depth_layers - 1, -1, -1):
+        layer_sx = skew_x + depth_dx * layer
+        layer_sy = skew_y + depth_dy * layer
+        layer_opacity = opacity * (0.3 + 0.7 * (1.0 - layer / max(n_depth_layers, 1)))
+        layer_reach = reach * (1.0 - 0.04 * layer)  # slightly smaller back layers
+
+        arc_pts: list[tuple[float, float]] = []
+        for i in range(n_steps + 1):
+            t = i / n_steps
+            deg = start_deg + t * (end_deg - start_deg)
+            rad = math.radians(deg)
+            x = pivot[0] + layer_reach * math.cos(rad) + layer_sx
+            y = pivot[1] + layer_reach * math.sin(rad) + layer_sy
+            arc_pts.append((x, y))
+
+        # Pivot also offset for back layers
+        layer_pivot = (pivot[0] + layer_sx * 0.3, pivot[1] + layer_sy * 0.3)
+        all_pts = [layer_pivot] + arc_pts
+        pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in all_pts)
+
+        use_filt = filt if layer == 0 else ""  # only glow on front layer
+        parts.append(
+            f'<polygon points="{pts_str}" fill="{color}" '
+            f'opacity="{layer_opacity:.2f}"{use_filt}/>'
+        )
+
+        # Edge strokes only on front layer
+        if layer == 0:
+            parts.append(
+                f'<line x1="{layer_pivot[0]:.1f}" y1="{layer_pivot[1]:.1f}" '
+                f'x2="{arc_pts[0][0]:.1f}" y2="{arc_pts[0][1]:.1f}" '
+                f'stroke="{color}" stroke-width="1.5" opacity="{min(opacity*2.0, 0.6):.2f}"/>'
+            )
+            parts.append(
+                f'<line x1="{layer_pivot[0]:.1f}" y1="{layer_pivot[1]:.1f}" '
+                f'x2="{arc_pts[-1][0]:.1f}" y2="{arc_pts[-1][1]:.1f}" '
+                f'stroke="{color}" stroke-width="1.5" opacity="{min(opacity*2.0, 0.6):.2f}"/>'
+            )
+            arc_d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in arc_pts)
+            parts.append(
+                f'<path d="{arc_d}" fill="none" stroke="{color}" '
+                f'stroke-width="1.2" opacity="{min(opacity*1.8, 0.5):.2f}"/>'
+            )
+
+    return "\n".join(parts)
+
+
+def _wedge_stack(
+    pivot: tuple[float, float],
+    angle_center: float,
+    grade_span: float,
+    full_span: float,
+    reach: float,
+    color: str,
+    filter_id: str = "",
+    depth_offset: tuple[float, float] = (0, 0),
+) -> str:
+    """Draw a layered wedge stack: full range outline + grade-colored wedge.
+
+    Shows context by drawing a dim gray full-range wedge behind the
+    colored grade wedge. Multiple depth layers create a thick 3D
+    volumetric appearance like SwingAI's angular zone planes.
+    """
+    parts: list[str] = []
+
+    # Background: full possible range (dim gray, single layer)
+    parts.append(_wedge_plane(
+        pivot, angle_center, full_span, reach,
+        color="#333340", opacity=0.12,
+        skew_x=depth_offset[0], skew_y=depth_offset[1],
+        n_depth_layers=1,
+    ))
+
+    # Foreground: grade-colored wedge with 3D depth layers
+    parts.append(_wedge_plane(
+        pivot, angle_center, grade_span, reach,
+        color=color, opacity=0.32, filter_id=filter_id,
+        skew_x=depth_offset[0] * 0.3, skew_y=depth_offset[1] * 0.3,
+        n_depth_layers=3,
+        depth_dx=depth_offset[0],
+        depth_dy=depth_offset[1],
+    ))
+
+    return "\n".join(parts)
+
+
+# ── Zone wedge drawing ────────────────────────────────────────────────────────────────────────────
+
+def _build_zone_wedges(
+    joints: dict[str, tuple[float, float]],
+    grades: dict[str, str],
+    fig_ox: float, fig_oy: float,
+) -> str:
+    """Draw translucent angular wedge planes at each graded body region."""
+    parts: list[str] = []
+
+    def jt(name: str) -> tuple[float, float]:
+        x, y = joints[name]
+        return (x + fig_ox, y + fig_oy)
+
+    def grade(metric: str) -> str:
+        return grades.get(metric, "yellow")
+
+    def color(metric: str) -> str:
+        return _GRADE_COLOR[grade(metric)]
+
+    def filt(metric: str) -> str:
+        return _glow_filter_id(grade(metric))
+
+    # Grade determines the span of the colored wedge relative to the full range
+    def grade_span_ratio(g: str) -> float:
+        return {"green": 0.85, "yellow": 0.55, "red": 0.30}[g]
+
+    # ── Shoulder / Arm Height ───────────────────────────────────────────
+    # Wedge fans upward from throw_shoulder showing arm elevation range
+    ts = jt("throw_shoulder")
+    te = jt("throw_elbow")
+    # Direction: from shoulder toward where elbow is (upward-left for RHP)
+    arm_angle = math.degrees(math.atan2(te[1] - ts[1], te[0] - ts[0]))
+    full_span_sa = 100  # full possible range
+    g_sa = grade("shoulder_abduction_fp")
+    parts.append(_wedge_stack(
+        pivot=ts,
+        angle_center=arm_angle,
+        grade_span=full_span_sa * grade_span_ratio(g_sa),
+        full_span=full_span_sa,
+        reach=75,
+        color=color("shoulder_abduction_fp"),
+        filter_id=filt("shoulder_abduction_fp"),
+        depth_offset=(4, -3),
+    ))
+
+    # ── Elbow Bend ─────────────────────────────────────────────────────
+    # Wedge at elbow showing flexion angle between upper/lower arm
+    tw = jt("throw_wrist")
+    # Direction: bisector of upper arm and forearm
+    upper_angle = math.degrees(math.atan2(ts[1] - te[1], ts[0] - te[0]))
+    lower_angle = math.degrees(math.atan2(tw[1] - te[1], tw[0] - te[0]))
+    bisector = (upper_angle + lower_angle) / 2
+    # Check if we need to wrap angles
+    if abs(upper_angle - lower_angle) > 180:
+        bisector += 180
+    full_span_ef = 90
+    g_ef = grade("elbow_flexion_fp")
+    parts.append(_wedge_stack(
+        pivot=te,
+        angle_center=bisector,
+        grade_span=full_span_ef * grade_span_ratio(g_ef),
+        full_span=full_span_ef,
+        reach=60,
+        color=color("elbow_flexion_fp"),
+        filter_id=filt("elbow_flexion_fp"),
+        depth_offset=(3, -2),
+    ))
+
+    # ── Posture / Torso Tilt ──────────────────────────────────────────
+    # Wedge from torso mid, fans left/right showing forward lean range
+    tmid = jt("torso_mid")
+    neck = jt("neck")
+    # Direction: upward from torso (toward neck)
+    torso_angle = math.degrees(math.atan2(neck[1] - tmid[1], neck[0] - tmid[0]))
+    full_span_tt = 80
+    g_tt = grade("torso_anterior_tilt_fp")
+    parts.append(_wedge_stack(
+        pivot=tmid,
+        angle_center=torso_angle,
+        grade_span=full_span_tt * grade_span_ratio(g_tt),
+        full_span=full_span_tt,
+        reach=65,
+        color=color("torso_anterior_tilt_fp"),
+        filter_id=filt("torso_anterior_tilt_fp"),
+        depth_offset=(5, 0),
+    ))
+
+    # ── Hip Lead / Hip-Shoulder Separation ────────────────────────────
+    # Wedge at pelvis showing rotational separation
+    pv = jt("pelvis")
+    # Direction: forward/toward lead side
+    lh = jt("lead_hip")
+    hip_fwd_angle = math.degrees(math.atan2(lh[1] - pv[1], lh[0] - pv[0]))
+    full_span_hs = 90
+    g_hs = grade("hip_shoulder_separation_fp")
+    parts.append(_wedge_stack(
+        pivot=pv,
+        angle_center=hip_fwd_angle - 20,  # rotate slightly forward
+        grade_span=full_span_hs * grade_span_ratio(g_hs),
+        full_span=full_span_hs,
+        reach=65,
+        color=color("hip_shoulder_separation_fp"),
+        filter_id=filt("hip_shoulder_separation_fp"),
+        depth_offset=(4, 2),
+    ))
+
+    # ── Stride Length ──────────────────────────────────────────────────
+    # Wedge from lead_hip showing stride leg angle
+    lhip = jt("lead_hip")
+    lk = jt("lead_knee")
+    stride_angle = math.degrees(math.atan2(lk[1] - lhip[1], lk[0] - lhip[0]))
+    full_span_sl = 85
+    g_sl = grade("stride_length_pct_height")
+    parts.append(_wedge_stack(
+        pivot=lhip,
+        angle_center=stride_angle,
+        grade_span=full_span_sl * grade_span_ratio(g_sl),
+        full_span=full_span_sl,
+        reach=70,
+        color=color("stride_length_pct_height"),
+        filter_id=filt("stride_length_pct_height"),
+        depth_offset=(3, 3),
+    ))
+
+    # ── Front Leg / Lead Knee ──────────────────────────────────────────
+    # Wedge at lead_knee showing extension angle
+    la = jt("lead_ankle")
+    knee_upper = math.degrees(math.atan2(lhip[1] - lk[1], lhip[0] - lk[0]))
+    knee_lower = math.degrees(math.atan2(la[1] - lk[1], la[0] - lk[0]))
+    knee_bisector = (knee_upper + knee_lower) / 2
+    if abs(knee_upper - knee_lower) > 180:
+        knee_bisector += 180
+    full_span_kn = 80
+    g_kn = grade("lead_knee_angle_fp")
+    parts.append(_wedge_stack(
+        pivot=lk,
+        angle_center=knee_bisector,
+        grade_span=full_span_kn * grade_span_ratio(g_kn),
+        full_span=full_span_kn,
+        reach=55,
+        color=color("lead_knee_angle_fp"),
+        filter_id=filt("lead_knee_angle_fp"),
+        depth_offset=(2, 3),
+    ))
 
     return "\n".join(parts)
 
@@ -346,43 +572,26 @@ def _build_floor_grid(ox: float = 350, oy: float = 500,
 
 def _build_mannequin(joints: dict[str, tuple[float, float]],
                      fig_ox: float, fig_oy: float) -> str:
-    """
-    Build the filled-polygon mannequin body using translated joint positions.
-    Returns SVG fragment string.
-    """
-    # Translate all joints
     j: dict[str, tuple[float, float]] = {
         k: (x + fig_ox, y + fig_oy) for k, (x, y) in joints.items()
     }
-
     parts: list[str] = []
 
-    # ── Color palette for mannequin body parts ─────────────────
-    body_fill   = "#a8a8b0"   # light steel — base body color
-    shadow_fill = "#787888"   # darker shaded faces
-    hi_fill     = "#d0d0dc"   # highlight faces
+    body_fill   = "#a8a8b0"
+    shadow_fill = "#787888"
+    hi_fill     = "#d0d0dc"
     joint_fill  = "#c8c8d8"
 
-    def _pts(*names: str) -> str:
+    def _poly_pts(*names: str) -> str:
         return " ".join(f"{j[n][0]:.1f},{j[n][1]:.1f}" for n in names)
-
-    def _poly(*names: str, fill: str = body_fill,
-              opacity: float = 1.0, filt: str = "") -> str:
-        filt_attr = f' filter="url(#{filt})"' if filt else ""
-        return (
-            f'<polygon points="{_pts(*names)}" fill="{fill}" '
-            f'opacity="{opacity:.2f}"{filt_attr}/>'
-        )
 
     # ── Head ─────────────────────────────────────────────────────
     hx, hy = j["head"]
     nx, ny = j["neck"]
     head_r = 18
     head_ry = 20
-    # Head sphere (slightly flattened ellipse)
     parts.append(_ellipse(hx, hy, head_r, head_ry, body_fill, 1.0,
                           filter="url(#body-shadow)"))
-    # Highlight top
     parts.append(_ellipse(hx-4, hy-6, 8, 6, hi_fill, 0.5))
     # Neck
     nw = 8
@@ -398,13 +607,8 @@ def _build_mannequin(joints: dict[str, tuple[float, float]],
     ls  = j["lead_shoulder"]
     th  = j["throw_hip"]
     lh  = j["lead_hip"]
-    pv  = j["pelvis"]
-    chest = j["chest"]
-    torso_mid = j["torso_mid"]
 
-    # Main torso quad (neck to hips)
-    shoulder_w = 30
-    hip_w = 22
+    # Main torso quad
     parts.append(
         f'<polygon points="'
         f'{ts[0]-2:.1f},{ts[1]+4:.1f} '
@@ -421,7 +625,7 @@ def _build_mannequin(joints: dict[str, tuple[float, float]],
         f'{th[0]-10:.1f},{th[1]:.1f}" '
         f'fill="{body_fill}"/>'
     )
-    # Highlight stripe down the center of torso
+    # Highlight stripe
     parts.append(
         f'<polygon points="'
         f'{(ts[0]+ls[0])/2-6:.1f},{ts[1]:.1f} '
@@ -434,11 +638,8 @@ def _build_mannequin(joints: dict[str, tuple[float, float]],
     # ── Throwing arm ────────────────────────────────────────────────
     te = j["throw_elbow"]
     tw = j["throw_wrist"]
-    # Upper arm (shoulder → elbow)
     _draw_limb_segment(parts, ts, te, 9, 7, body_fill, shadow_fill)
-    # Forearm (elbow → wrist)
     _draw_limb_segment(parts, te, tw, 7, 5, shadow_fill, body_fill)
-    # Elbow joint sphere
     parts.append(_circle_svg(*te, 9, joint_fill))
 
     # ── Glove arm ─────────────────────────────────────────────────
@@ -466,7 +667,6 @@ def _build_mannequin(joints: dict[str, tuple[float, float]],
     _draw_limb_segment(parts, th, tk, 11, 9, shadow_fill, body_fill)
     _draw_limb_segment(parts, tk, ta, 9, 7, body_fill, shadow_fill)
     parts.append(_circle_svg(*tk, 10, joint_fill))
-    # Foot
     parts.append(
         f'<polygon points="{ta[0]:.1f},{ta[1]:.1f} '
         f'{tft[0]:.1f},{tft[1]:.1f} '
@@ -482,7 +682,6 @@ def _build_mannequin(joints: dict[str, tuple[float, float]],
     _draw_limb_segment(parts, lh, lk, 11, 9, body_fill, shadow_fill)
     _draw_limb_segment(parts, lk, la, 9, 7, shadow_fill, body_fill)
     parts.append(_circle_svg(*lk, 10, joint_fill))
-    # Foot
     parts.append(
         f'<polygon points="{la[0]:.1f},{la[1]:.1f} '
         f'{lft[0]:.1f},{lft[1]:.1f} '
@@ -498,7 +697,7 @@ def _build_mannequin(joints: dict[str, tuple[float, float]],
     parts.append(_ellipse(tw[0], tw[1], 6, 7, joint_fill))
     parts.append(_ellipse(lw[0], lw[1], 6, 7, joint_fill))
 
-    # ── Cap (hat brim) for visual interest ──────────────────────────────────
+    # ── Cap (hat brim) ──────────────────────────────────────────────
     brim_y = hy - head_ry + 2
     parts.append(
         f'<ellipse cx="{hx:.1f}" cy="{brim_y:.1f}" '
@@ -519,7 +718,6 @@ def _draw_limb_segment(
     w_a: float, w_b: float,
     fill_front: str, fill_back: str,
 ) -> None:
-    """Draw a tapered limb segment (quad) between joints a and b."""
     dx = b[0] - a[0]
     dy = b[1] - a[1]
     length = math.hypot(dx, dy) or 1
@@ -534,153 +732,14 @@ def _draw_limb_segment(
     def fmt(p: tuple[float, float]) -> str:
         return f"{p[0]:.1f},{p[1]:.1f}"
 
-    # Shadow face
     parts.append(
         f'<polygon points="{fmt(p2)} {fmt(p3)} {fmt(p4)} {fmt(p1)}" '
         f'fill="{fill_back}" opacity="0.7"/>'
     )
-    # Front face
     parts.append(
         f'<polygon points="{fmt(p1)} {fmt(p2)} {fmt(p3)} {fmt(p4)}" '
         f'fill="{fill_front}"/>'
     )
-
-
-# ── Zone band drawing ────────────────────────────────────────────────────────────────────────────
-
-def _arc_band(cx: float, cy: float, rx: float, ry: float,
-              start_deg: float, end_deg: float,
-              color: str, width: float = 18,
-              opacity: float = 0.35, filter_id: str = "") -> str:
-    """
-    Draw a thick arc band (elliptical) around a joint.
-    Rendered as a filled arc sweep with inner/outer radii.
-    """
-    parts: list[str] = []
-    filt = f' filter="url(#{filter_id})"' if filter_id else ""
-
-    def _arc_pt(rx_: float, ry_: float, deg: float) -> tuple[float, float]:
-        rad = math.radians(deg)
-        return (cx + rx_ * math.cos(rad), cy + ry_ * math.sin(rad))
-
-    inner_rx = max(rx - width/2, rx * 0.55)
-    inner_ry = max(ry - width/2, ry * 0.55)
-    outer_rx = rx + width/2
-    outer_ry = ry + width/2
-
-    steps = max(24, int(abs(end_deg - start_deg) / 4))
-    angles = [start_deg + (end_deg - start_deg) * i / steps for i in range(steps + 1)]
-
-    outer_pts = [_arc_pt(outer_rx, outer_ry, a) for a in angles]
-    inner_pts = [_arc_pt(inner_rx, inner_ry, a) for a in reversed(angles)]
-
-    all_pts = outer_pts + inner_pts
-    pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in all_pts)
-
-    parts.append(
-        f'<polygon points="{pts_str}" fill="{color}" '
-        f'opacity="{opacity:.2f}"{filt}/>'
-    )
-    # Bright inner stroke for crispness
-    outer_d = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in outer_pts)
-    parts.append(
-        f'<path d="{outer_d}" fill="none" stroke="{color}" '
-        f'stroke-width="2" opacity="{min(opacity*2.2, 0.85):.2f}"{filt}/>'
-    )
-    return "\n".join(parts)
-
-
-def _build_zone_bands(
-    joints: dict[str, tuple[float, float]],
-    grades: dict[str, str],
-    fig_ox: float, fig_oy: float,
-) -> str:
-    """Draw translucent colored zone bands around each graded body region."""
-    parts: list[str] = []
-
-    def jt(name: str) -> tuple[float, float]:
-        x, y = joints[name]
-        return (x + fig_ox, y + fig_oy)
-
-    def grade(metric: str) -> str:
-        return grades.get(metric, "yellow")
-
-    def color(metric: str) -> str:
-        return _GRADE_COLOR[grade(metric)]
-
-    def filt(metric: str) -> str:
-        return _glow_filter_id(grade(metric))
-
-    # ── Shoulder band ───────────────────────────────────────────────
-    ts = jt("throw_shoulder")
-    g_sa = grade("shoulder_abduction_fp")
-    parts.append(_arc_band(
-        ts[0], ts[1], 34, 26,
-        start_deg=-210, end_deg=-30,
-        color=color("shoulder_abduction_fp"),
-        width=22, opacity=0.38,
-        filter_id=filt("shoulder_abduction_fp"),
-    ))
-
-    # ── Elbow band ───────────────────────────────────────────────────
-    te = jt("throw_elbow")
-    parts.append(_arc_band(
-        te[0], te[1], 26, 20,
-        start_deg=-170, end_deg=20,
-        color=color("elbow_flexion_fp"),
-        width=18, opacity=0.38,
-        filter_id=filt("elbow_flexion_fp"),
-    ))
-
-    # ── Torso band (wide band across chest area) ─────────────────────
-    chest = jt("chest")
-    ts_  = jt("throw_shoulder")
-    ls_  = jt("lead_shoulder")
-    mid_x = (ts_[0] + ls_[0]) / 2
-    mid_y = (ts_[1] + ls_[1]) / 2
-    parts.append(_arc_band(
-        mid_x, chest[1] + 12, 42, 18,
-        start_deg=-175, end_deg=5,
-        color=color("torso_anterior_tilt_fp"),
-        width=28, opacity=0.30,
-        filter_id=filt("torso_anterior_tilt_fp"),
-    ))
-
-    # ── Hip / separation band ─────────────────────────────────────────
-    th = jt("throw_hip")
-    lh = jt("lead_hip")
-    hip_cx = (th[0] + lh[0]) / 2
-    hip_cy = (th[1] + lh[1]) / 2
-    parts.append(_arc_band(
-        hip_cx, hip_cy, 44, 16,
-        start_deg=-180, end_deg=0,
-        color=color("hip_shoulder_separation_fp"),
-        width=22, opacity=0.36,
-        filter_id=filt("hip_shoulder_separation_fp"),
-    ))
-
-    # ── Stride leg band (along the lead thigh) ────────────────────────
-    lk = jt("lead_knee")
-    la = jt("lead_ankle")
-    mid_leg = ((lh[0]+lk[0])/2, (lh[1]+lk[1])/2 + 4)
-    parts.append(_arc_band(
-        mid_leg[0], mid_leg[1], 30, 18,
-        start_deg=20, end_deg=180,
-        color=color("stride_length_pct_height"),
-        width=22, opacity=0.35,
-        filter_id=filt("stride_length_pct_height"),
-    ))
-
-    # ── Lead knee band ───────────────────────────────────────────────
-    parts.append(_arc_band(
-        lk[0], lk[1], 28, 22,
-        start_deg=10, end_deg=190,
-        color=color("lead_knee_angle_fp"),
-        width=20, opacity=0.38,
-        filter_id=filt("lead_knee_angle_fp"),
-    ))
-
-    return "\n".join(parts)
 
 
 # ── Side labels ─────────────────────────────────────────────────────────────────────────────
@@ -690,25 +749,14 @@ def _build_labels(
     grades: dict[str, str],
     fig_ox: float, fig_oy: float,
 ) -> str:
-    """
-    Draw zone labels in two columns (left and right) of the figure.
-    Each label has a colored circle + name + one-word grade.
-    """
     parts: list[str] = []
 
     def jt(name: str) -> tuple[float, float]:
         x, y = joints[name]
         return (x + fig_ox, y + fig_oy)
 
-    # Label positions: (metric_key, label_x, label_y, anchor)
-    # Left column: shoulder, elbow, stride  → anchor start, left of figure
-    # Right column: torso, hip, front leg  → anchor start, right of figure
-    # fig_ox=130; figure spans ~x:130-510 (lead foot toe at ~372+130=502)
-    left_x  = fig_ox - 12   # right-anchored
-    right_x = fig_ox + 380  # left-anchored, well clear of rightmost joint
-
-    # Compute raw Y positions, then de-overlap within each column.
-    # Each label needs ~28px vertical space (name + grade + gap).
+    left_x  = fig_ox - 12
+    right_x = fig_ox + 380
     MIN_GAP = 28
 
     raw_left = [
@@ -723,7 +771,6 @@ def _build_labels(
     ]
 
     def _deoverlap(specs: list[tuple[str, float]]) -> list[tuple[str, float]]:
-        """Push labels apart so none overlap within a column."""
         sorted_specs = sorted(specs, key=lambda s: s[1])
         result = []
         prev_y = -999.0
@@ -742,7 +789,7 @@ def _build_labels(
 
     for metric, side, lbl_y in label_specs:
         g = grades.get(metric, "yellow")
-        color = _GRADE_COLOR[g]
+        clr = _GRADE_COLOR[g]
         word  = _GRADE_WORD[g]
         name  = ZONE_BANDS[metric]["label"]
 
@@ -755,18 +802,18 @@ def _build_labels(
             anchor = "start"
             txt_x  = dot_x + 14
 
-        # Connector line to body (subtle)
+        # Connector line
         body_x = jt("throw_shoulder")[0] - 15 if side == "left" else right_x - 8
         parts.append(
             f'<line x1="{dot_x+7:.1f}" y1="{lbl_y:.1f}" x2="{body_x:.1f}" y2="{lbl_y:.1f}" '
-            f'stroke="{color}" stroke-width="0.8" stroke-dasharray="3 3" opacity="0.4"/>'
+            f'stroke="{clr}" stroke-width="0.8" stroke-dasharray="3 3" opacity="0.4"/>'
         )
 
         # Colored dot with glow
         fid = _glow_filter_id(g)
         parts.append(
             f'<circle cx="{dot_x+7:.1f}" cy="{lbl_y:.1f}" r="5" '
-            f'fill="{color}" opacity="0.9" filter="url(#{fid})"/>'
+            f'fill="{clr}" opacity="0.9" filter="url(#{fid})"/>'
         )
 
         # Label name
@@ -774,9 +821,9 @@ def _build_labels(
             txt_x, lbl_y - 5, name, size=11, fill="#d0d0d0",
             anchor="start", weight="600",
         ))
-        # One-word grade
+        # Grade word
         parts.append(_text_svg(
-            txt_x, lbl_y + 8, word, size=10, fill=color,
+            txt_x, lbl_y + 8, word, size=10, fill=clr,
             anchor="start",
         ))
 
@@ -786,13 +833,8 @@ def _build_labels(
 # ── Donut score gauge ───────────────────────────────────────────────────────────────────────────
 
 def _build_score_gauge(score: int, cx: float, cy: float, r: float = 46) -> str:
-    """
-    Build a circular donut arc gauge showing the overall PitchZone score.
-    The arc sweeps from 225° to 315° (270° total, clockwise), colored by score.
-    """
     parts: list[str] = []
 
-    # Score range → color
     if score >= 85:
         arc_color = _GREEN
         filt_id   = "glow-green"
@@ -807,11 +849,8 @@ def _build_score_gauge(score: int, cx: float, cy: float, r: float = 46) -> str:
     bg_r   = r
     inner_r = r - ring_w
 
-    # Background track (full 270° gray arc)
-    start_rad = math.radians(135)   # 225° but SVG angles: start at -135 from east
     sweep_deg = 270.0
-    start_a   = 135   # degrees from east, clockwise
-    end_a     = 135 + 270
+    start_a   = 135
 
     def _arc_pts(radius: float, a_start: float, a_end: float,
                  steps: int = 60) -> list[tuple[float, float]]:
@@ -823,7 +862,8 @@ def _build_score_gauge(score: int, cx: float, cy: float, r: float = 46) -> str:
             pts.append((cx + radius * math.cos(rad), cy + radius * math.sin(rad)))
         return pts
 
-    # Full track (gray)
+    end_a = start_a + 270
+
     outer_bg = _arc_pts(bg_r, start_a, end_a)
     inner_bg = _arc_pts(inner_r, start_a, end_a)
     bg_poly  = outer_bg + list(reversed(inner_bg))
@@ -832,7 +872,6 @@ def _build_score_gauge(score: int, cx: float, cy: float, r: float = 46) -> str:
         f'<polygon points="{bg_pts}" fill="#2a2a3a" opacity="0.8"/>'
     )
 
-    # Score arc
     score_sweep = sweep_deg * score / 100
     outer_sc = _arc_pts(bg_r,    start_a, start_a + score_sweep)
     inner_sc = _arc_pts(inner_r, start_a, start_a + score_sweep)
@@ -843,16 +882,13 @@ def _build_score_gauge(score: int, cx: float, cy: float, r: float = 46) -> str:
         f'opacity="0.9" filter="url(#{filt_id})"/>'
     )
 
-    # Center circle (dark)
     parts.append(_circle_svg(cx, cy, inner_r - 2, "#111118"))
 
-    # Score number
     parts.append(_text_svg(cx, cy - 4, str(score), size=26,
                            fill="#f0f0f0", weight="700"))
     parts.append(_text_svg(cx, cy + 16, "PitchZone", size=9,
                            fill="#888888"))
 
-    # End cap dots
     start_pt_o = (cx + bg_r * math.cos(math.radians(start_a)),
                   cy + bg_r * math.sin(math.radians(start_a)))
     end_pt_o   = (cx + bg_r * math.cos(math.radians(start_a + score_sweep)),
@@ -870,22 +906,12 @@ def _build_score_gauge(score: int, cx: float, cy: float, r: float = 46) -> str:
 def _build_header(score: int, throws: str, title: str = "PitchZone") -> str:
     parts: list[str] = []
 
-    # Section title left
     parts.append(_text_svg(16, 30, title, size=20, fill="#e8e8f0",
                            anchor="start", weight="700"))
     hand_label = "RHP" if throws == "R" else "LHP"
     parts.append(_text_svg(16, 50, hand_label, size=11, fill="#666688",
                            anchor="start"))
 
-    # Overall score label  (right-aligned)
-    if score >= 85:
-        sc_color = _GREEN
-    elif score >= 60:
-        sc_color = _YELLOW
-    else:
-        sc_color = _RED
-
-    # Gauge positioned top-right
     gauge_cx = _VW - 72
     gauge_cy = 62
     parts.append(_build_score_gauge(score, gauge_cx, gauge_cy, r=46))
@@ -904,22 +930,19 @@ def generate_pitchzone_svg(
     height: int = 600,
 ) -> str:
     """Generate a SwingAI-inspired SVG of a pitcher at foot plant with
-    colored zone bands around each body region.
+    angular wedge planes around each body region.
 
     Args:
         grades:  dict mapping metric_name → "green" / "yellow" / "red".
-                 Any missing metric defaults to "yellow".
-        metrics: dict mapping metric_name → actual float value (unused in SVG,
-                 reserved for future tooltip use).
-        throws:  "R" for RHP (default) or "L" for LHP (mirrors the figure).
+        metrics: dict mapping metric_name → actual float value (unused).
+        throws:  "R" for RHP or "L" for LHP.
         title:   Label shown in the SVG header.
         width:   SVG width attribute in pixels.
         height:  SVG height attribute in pixels.
 
     Returns:
-        Complete inline SVG string (no XML declaration, suitable for HTML).
+        Complete inline SVG string.
     """
-    # Normalise grades to lowercase, fill missing with "yellow"
     norm_grades: dict[str, str] = {}
     for metric in ZONE_BANDS:
         raw = grades.get(metric, "yellow")
@@ -932,15 +955,11 @@ def generate_pitchzone_svg(
     score  = calculate_pitchzone_score(norm_grades)
     joints = _RHP if throws == "R" else _mirror(_RHP, cx=200.0)
 
-    # Figure offset within canvas:
-    # The figure sub-canvas is 400×430 px; we place it slightly left of centre
-    # to leave room for right-column labels.
-    fig_ox = 130.0   # left edge offset
-    fig_oy =  85.0   # top offset (below header)
+    fig_ox = 130.0
+    fig_oy =  85.0
 
     parts: list[str] = []
 
-    # ── SVG open ───────────────────────────────────────────────────
     parts.append(
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'width="{width}" height="{height}" '
@@ -948,13 +967,10 @@ def generate_pitchzone_svg(
         f'style="background:#0a0a0a;border-radius:10px;display:block;">'
     )
 
-    # Filters
     parts.append(_build_filters())
 
-    # Background
     parts.append(f'<rect width="{_VW}" height="{_VH}" fill="#0a0a0a"/>')
 
-    # Subtle radial vignette
     parts.append(
         f'<radialGradient id="vignette" cx="50%" cy="50%" r="70%">'
         f'<stop offset="0%" stop-color="#141420" stop-opacity="0"/>'
@@ -963,22 +979,19 @@ def generate_pitchzone_svg(
         f'<rect width="{_VW}" height="{_VH}" fill="url(#vignette)"/>'
     )
 
-    # Perspective floor grid (bottom third)
-    floor_y = fig_oy + 420   # approximate ground line
+    floor_y = fig_oy + 420
     floor_y = min(floor_y, int(_VH * 0.78))
     parts.append(_build_floor_grid(ox=350, oy=floor_y, vp_x=_VW*0.38, vp_y=floor_y-100))
 
-    # Header / score gauge
     parts.append(_build_header(score, throws, title))
 
-    # Divider line under header
     parts.append(
         f'<line x1="0" y1="72" x2="{_VW}" y2="72" '
         f'stroke="#1e1e2e" stroke-width="1"/>'
     )
 
-    # Zone bands (drawn BEHIND the figure)
-    parts.append(_build_zone_bands(joints, norm_grades, fig_ox, fig_oy))
+    # Zone wedge planes (drawn BEHIND the figure)
+    parts.append(_build_zone_wedges(joints, norm_grades, fig_ox, fig_oy))
 
     # Mannequin figure
     parts.append(_build_mannequin(joints, fig_ox, fig_oy))
@@ -986,7 +999,6 @@ def generate_pitchzone_svg(
     # Zone labels
     parts.append(_build_labels(joints, norm_grades, fig_ox, fig_oy))
 
-    # ── SVG close ───────────────────────────────────────────────────
     parts.append("</svg>")
 
     return "\n".join(parts)
